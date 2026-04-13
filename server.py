@@ -1256,126 +1256,251 @@ REGISTER_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Vigil — Registro</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: {
-        "primary":                  "#00e475",
-        "on-primary":               "#003918",
-        "surface":                  "#131313",
-        "surface-container":        "#201f1f",
-        "surface-container-high":   "#2a2a2a",
-        "on-surface":               "#e5e2e1",
-        "on-surface-variant":       "#c6c6cb",
-        "outline-variant":          "#45474b",
-        "error":                    "#ffb4ab",
-      },
-      fontFamily: {
-        headline: ["Space Grotesk","sans-serif"],
-        body:     ["Inter","sans-serif"],
-      },
-    }
-  }
-}
-</script>
+<title>Vigil — Crear cuenta</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
-input{background:#201f1f;border:1px solid #45474b;color:#e5e2e1;border-radius:4px;
-  padding:10px 14px;width:100%;outline:none;font-family:'Inter',sans-serif;font-size:14px}
-input:focus{border-color:#00e475}
-input::placeholder{color:#6b7280}
-.btn{background:#00e475;color:#003918;font-weight:600;border:none;border-radius:4px;
-  padding:11px 24px;cursor:pointer;font-family:'Space Grotesk',sans-serif;font-size:14px;
-  letter-spacing:.3px;transition:opacity .15s;width:100%}
-.btn:hover{opacity:.88}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.secret-box{background:#0a1a0f;border:1px solid #00e475;border-radius:6px;
-  padding:16px 20px;font-family:'Space Grotesk',monospace;font-size:15px;
-  color:#00e475;word-break:break-all;letter-spacing:.5px}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0e0e0e;
+  color: #e5e2e1;
+  font-family: "Space Grotesk", sans-serif;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* ── Card ── */
+.card {
+  width: 100%;
+  max-width: 460px;
+  background: #161616;
+  border: 1px solid #262626;
+  border-radius: 20px;
+  padding: 48px 44px 52px;
+  box-shadow: 0 24px 64px rgba(0,0,0,.55);
+}
+
+/* ── Logo ── */
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 36px;
+}
+.logo-text {
+  font-size: 22px;
+  font-weight: 700;
+  color: #00e475;
+  letter-spacing: -.4px;
+}
+
+/* ── Headings ── */
+.heading { font-size: 24px; font-weight: 700; letter-spacing: -.3px; margin-bottom: 8px; }
+.subheading { font-size: 14px; color: #6b7280; line-height: 1.6; margin-bottom: 36px; }
+
+/* ── Field ── */
+.field { margin-bottom: 22px; }
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  margin-bottom: 9px;
+}
+.field label span { color: #4b5563; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.field input {
+  display: block;
+  width: 100%;
+  background: #1e1e1e;
+  border: 1.5px solid #2e2e2e;
+  color: #e5e2e1;
+  border-radius: 10px;
+  padding: 14px 18px;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 15px;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.field input:focus {
+  border-color: #00e475;
+  box-shadow: 0 0 0 3px rgba(0,228,117,.1);
+}
+.field input::placeholder { color: #3f3f3f; }
+.field-error {
+  font-size: 12px;
+  color: #ffb4ab;
+  margin-top: 7px;
+  display: none;
+}
+
+/* ── Button ── */
+.btn-primary {
+  display: block;
+  width: 100%;
+  background: #00e475;
+  color: #003918;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  border: none;
+  border-radius: 10px;
+  padding: 15px 24px;
+  cursor: pointer;
+  letter-spacing: .2px;
+  transition: filter .15s, transform .1s;
+  margin-top: 10px;
+}
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:active { transform: scale(.98); }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; transform: none; filter: none; }
+
+.err-general {
+  font-size: 13px;
+  color: #ffb4ab;
+  text-align: center;
+  margin-top: 12px;
+  display: none;
+}
+
+/* ── Result ── */
+#result-section { display: none; }
+.success-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(0,228,117,.1);
+  border: 1.5px solid #00e47555;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+.success-icon svg { width: 26px; height: 26px; }
+.result-title { font-size: 22px; font-weight: 700; color: #00e475; text-align: center; margin-bottom: 6px; }
+.result-sub { font-size: 13px; color: #6b7280; text-align: center; margin-bottom: 32px; line-height: 1.5; }
+
+.secret-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  margin-bottom: 10px;
+}
+.secret-box {
+  background: #0a1a0f;
+  border: 1.5px solid #00e47544;
+  border-radius: 12px;
+  padding: 18px 22px;
+  font-size: 15px;
+  color: #00e475;
+  word-break: break-all;
+  letter-spacing: .4px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.copy-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.btn-copy {
+  background: transparent;
+  border: 1.5px solid #2e2e2e;
+  color: #6b7280;
+  border-radius: 8px;
+  padding: 7px 18px;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.btn-copy:hover { border-color: #00e475; color: #00e475; }
+
+.btn-dash {
+  display: block;
+  width: 100%;
+  background: #00e475;
+  color: #003918;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  border: none;
+  border-radius: 10px;
+  padding: 15px 24px;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  transition: filter .15s;
+  margin-top: 28px;
+}
+.btn-dash:hover { filter: brightness(1.08); }
+
+/* ── Footer ── */
+.footer { text-align: center; margin-top: 22px; font-size: 12px; color: #333; }
 </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4">
-<div style="width:100%;max-width:420px">
+<body>
+
+<div class="card">
 
   <!-- Logo -->
-  <div class="mb-8 text-center">
-    <div style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;color:#00e475;letter-spacing:-0.5px">
-      Vigil
-    </div>
-    <div style="color:#6b7280;font-size:13px;margin-top:4px">Monitor de sistema</div>
+  <div class="logo">
+    <svg width="28" height="28" viewBox="0 0 64 64" fill="none">
+      <circle cx="32" cy="32" r="28" fill="#131313" stroke="#00e475" stroke-width="2.5"/>
+      <ellipse cx="32" cy="32" rx="17" ry="8.5" fill="#00e47510" stroke="#00e475" stroke-width="2"/>
+      <circle cx="32" cy="32" r="7" fill="#00e475"/>
+      <circle cx="29" cy="29" r="2.5" fill="white" opacity=".75"/>
+    </svg>
+    <span class="logo-text">Vigil</span>
   </div>
 
-  <!-- Card -->
-  <div style="background:#1c1b1b;border:1px solid #2a2a2a;border-radius:8px;padding:28px 28px 32px">
+  <!-- Formulario -->
+  <div id="form-section">
+    <h1 class="heading">Crear cuenta</h1>
+    <p class="subheading">Genera tu clave secreta para empezar a monitorear tu PC.</p>
 
-    <!-- Formulario -->
-    <div id="form-section">
-      <h2 style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:600;margin-bottom:6px">
-        Crear cuenta
-      </h2>
-      <p style="color:#6b7280;font-size:13px;margin-bottom:24px;line-height:1.5">
-        Genera tu clave secreta para empezar a monitorear.
-      </p>
-
-      <div class="mb-4">
-        <label style="display:block;font-size:12px;font-weight:500;color:#9ca3af;margin-bottom:6px;letter-spacing:.4px;text-transform:uppercase">
-          Nombre
-        </label>
-        <input id="inp-name" type="text" placeholder="ej. marc0" maxlength="60" autocomplete="off">
-        <div id="err-name" style="color:#ffb4ab;font-size:12px;margin-top:5px;display:none"></div>
-      </div>
-
-      <div class="mb-6">
-        <label style="display:block;font-size:12px;font-weight:500;color:#9ca3af;margin-bottom:6px;letter-spacing:.4px;text-transform:uppercase">
-          Email <span style="color:#4b5563;font-weight:400">(opcional)</span>
-        </label>
-        <input id="inp-email" type="email" placeholder="ej. yo@ejemplo.com" maxlength="120">
-      </div>
-
-      <button class="btn" id="btn-register" onclick="doRegister()">Crear cuenta</button>
-      <div id="err-general" style="color:#ffb4ab;font-size:12px;margin-top:10px;display:none;text-align:center"></div>
+    <div class="field">
+      <label for="inp-name">Nombre de usuario</label>
+      <input id="inp-name" type="text" placeholder="ej. marc0" maxlength="60" autocomplete="off" spellcheck="false">
+      <div class="field-error" id="err-name"></div>
     </div>
 
-    <!-- Resultado -->
-    <div id="result-section" style="display:none">
-      <div style="text-align:center;margin-bottom:20px">
-        <div style="font-size:32px;margin-bottom:8px">✓</div>
-        <h2 style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:600;color:#00e475">
-          ¡Cuenta creada!
-        </h2>
-        <p style="color:#6b7280;font-size:13px;margin-top:4px">
-          Guarda tu clave secreta — no se puede recuperar.
-        </p>
-      </div>
-
-      <div style="margin-bottom:20px">
-        <div style="font-size:11px;font-weight:500;color:#9ca3af;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">
-          Clave secreta
-        </div>
-        <div class="secret-box" id="result-secret"></div>
-        <button onclick="copySecret()" style="margin-top:8px;background:transparent;border:1px solid #45474b;
-          color:#9ca3af;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px;
-          font-family:'Inter',sans-serif;transition:border-color .15s"
-          onmouseover="this.style.borderColor='#00e475'" onmouseout="this.style.borderColor='#45474b'">
-          Copiar
-        </button>
-      </div>
-
-      <a id="dash-link" href="#" class="btn" style="display:block;text-align:center;text-decoration:none">
-        Ir al dashboard →
-      </a>
+    <div class="field">
+      <label for="inp-email">Email <span>(opcional)</span></label>
+      <input id="inp-email" type="email" placeholder="ej. yo@ejemplo.com" maxlength="120">
     </div>
 
+    <button class="btn-primary" id="btn-register" onclick="doRegister()">Crear cuenta</button>
+    <div class="err-general" id="err-general"></div>
   </div>
 
-  <div style="text-align:center;margin-top:16px;font-size:12px;color:#4b5563">
-    Vigil &mdash; solo para uso personal
+  <!-- Resultado -->
+  <div id="result-section">
+    <div class="success-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#00e475" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    </div>
+    <div class="result-title">¡Cuenta creada!</div>
+    <p class="result-sub">Guarda tu clave secreta — no se puede recuperar después.</p>
+
+    <div class="secret-label">Tu clave secreta</div>
+    <div class="secret-box" id="result-secret"></div>
+    <div class="copy-row">
+      <button class="btn-copy" onclick="copySecret()">Copiar clave</button>
+    </div>
+
+    <a id="dash-link" href="#" class="btn-dash">Ir al dashboard →</a>
   </div>
+
 </div>
+
+<div class="footer">Vigil &mdash; monitor de sistema para Windows</div>
 
 <script>
 const BASE = "__BASE__";
@@ -1398,17 +1523,14 @@ async function doRegister() {
   }
 
   btn.disabled = true;
-  btn.textContent = "Creando…";
+  btn.textContent = "Creando cuenta…";
 
   try {
     const params = new URLSearchParams({ name });
     if (email) params.set("email", email);
-    const res = await fetch(`${BASE}/api/register?${params}`, { method: "POST" });
+    const res  = await fetch(`${BASE}/api/register?${params}`, { method: "POST" });
     const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.detail || "Error al registrar");
-    }
+    if (!res.ok) throw new Error(data.detail || "Error al registrar");
 
     document.getElementById("result-secret").textContent = data.secret;
     document.getElementById("dash-link").href = data.dashboard;
@@ -1426,14 +1548,14 @@ async function doRegister() {
 function copySecret() {
   const txt = document.getElementById("result-secret").textContent;
   navigator.clipboard.writeText(txt).then(() => {
-    const btn = event.target;
+    const btn = event.currentTarget;
     btn.textContent = "¡Copiado!";
     btn.style.borderColor = "#00e475";
     btn.style.color = "#00e475";
     setTimeout(() => {
-      btn.textContent = "Copiar";
-      btn.style.borderColor = "#45474b";
-      btn.style.color = "#9ca3af";
+      btn.textContent = "Copiar clave";
+      btn.style.borderColor = "";
+      btn.style.color = "";
     }, 1800);
   });
 }
@@ -1441,6 +1563,8 @@ function copySecret() {
 document.getElementById("inp-name").addEventListener("keydown", e => {
   if (e.key === "Enter") doRegister();
 });
+
+document.getElementById("inp-name").focus();
 </script>
 </body>
 </html>

@@ -9,6 +9,7 @@ pyinstaller ^
   --name "Vigil" ^
   --icon "vigil.ico" ^
   --add-data "agent.py;." ^
+  --add-data "vigil.ico;." ^
   --hidden-import pystray._win32 ^
   --hidden-import PIL._tkinter_finder ^
   vigil_tray.py

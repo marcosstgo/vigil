@@ -7,20 +7,54 @@ Vigil Tray App
 """
 import sys
 import os
-import json
-import threading
-import time
-import winreg
-import tempfile
-import subprocess
-import requests
-from pathlib import Path
-from datetime import datetime
+import traceback
 
-import pystray
-from PIL import Image, ImageDraw, ImageFont
-import tkinter as tk
-from tkinter import ttk, messagebox
+# Log de arranque — atrapa cualquier crash antes del sistema de log propio
+_BOOT_LOG = os.path.join(os.environ.get("APPDATA","C:\\Temp"), "Vigil", "boot.log")
+os.makedirs(os.path.dirname(_BOOT_LOG), exist_ok=True)
+def _boot_log(msg):
+    with open(_BOOT_LOG, "a") as f:
+        f.write(msg + "\n")
+
+try:
+    _boot_log("=== Vigil arrancando ===")
+
+    import json
+    import threading
+    import time
+    import winreg
+    import tempfile
+    import subprocess
+    import requests
+    import ctypes
+    from pathlib import Path
+    from datetime import datetime
+
+    _boot_log("imports stdlib OK")
+
+    import pystray
+    _boot_log("pystray OK")
+    from PIL import Image, ImageDraw
+    from PIL import ImageTk
+    _boot_log("PIL OK")
+    import tkinter as tk
+    from tkinter import ttk, messagebox
+    _boot_log("tkinter OK")
+
+    # Importar agente
+    sys.path.insert(0, str(Path(getattr(sys, '_MEIPASS', Path(__file__).parent))))
+    from agent import run_ps
+    _boot_log("agent OK")
+
+    # Ocultar consola
+    try:
+        ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+    except Exception:
+        pass
+
+except Exception as e:
+    _boot_log(f"ERROR EN ARRANQUE: {e}\n{traceback.format_exc()}")
+    sys.exit(1)
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 VERSION      = "1.0.0"
@@ -32,9 +66,6 @@ LOG_FILE     = CONFIG_DIR / "vigil.log"
 AUTORUN_KEY  = r"Software\Microsoft\Windows\CurrentVersion\Run"
 EXE_PATH     = Path(sys.executable if getattr(sys, "frozen", False) else sys.argv[0]).resolve()
 
-# Importar lógica del agente
-sys.path.insert(0, str(Path(__file__).parent))
-from agent import run_ps, send, PS_SCRIPT
 
 # ── Config ────────────────────────────────────────────────────────────────────
 def load_config():
@@ -99,31 +130,77 @@ def get_autorun() -> bool:
         return False
 
 # ── Icono ─────────────────────────────────────────────────────────────────────
-def make_icon(color="#00e475"):
-    img  = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+import math as _math
+
+def make_icon(color="#00e475", size=64):
+    img  = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    # Círculo de fondo
-    draw.ellipse([4, 4, 60, 60], fill=color)
-    # "V" de Vigil
-    pts = [(16, 20), (32, 44), (48, 20)]
-    draw.line([pts[0], pts[1]], fill="white", width=6)
-    draw.line([pts[1], pts[2]], fill="white", width=6)
+    s, pad = size, size * 0.06
+    ring = max(1, int(s * 0.05))
+
+    # Fondo círculo oscuro
+    draw.ellipse([pad, pad, s - pad, s - pad], fill=(18, 18, 18, 255))
+    # Anillo exterior del color indicado
+    draw.ellipse([pad, pad, s - pad, s - pad], outline=color, width=ring)
+
+    # Ojo (almendra)
+    cx, cy = s / 2, s / 2
+    ew, eh = s * 0.52, s * 0.26
+    steps  = 48
+    top_pts, bot_pts = [], []
+    for i in range(steps + 1):
+        t   = i / steps
+        ang = _math.pi * t
+        x   = cx + ew / 2 * _math.cos(_math.pi - ang)
+        top_pts.append((x, cy - eh / 2 * _math.sin(ang) * 1.1))
+        bot_pts.append((x, cy + eh / 2 * _math.sin(ang) * 1.1))
+
+    lw = max(1, int(s * 0.05))
+    draw.polygon(top_pts + list(reversed(bot_pts)), fill=(*bytes.fromhex(color.lstrip("#")), 35))
+    draw.line(top_pts, fill=color, width=lw)
+    draw.line(bot_pts, fill=color, width=lw)
+
+    # Pupila
+    pr = s * 0.13
+    r, g, b = bytes.fromhex(color.lstrip("#"))
+    draw.ellipse([cx - pr, cy - pr, cx + pr, cy + pr], fill=(r, g, b, 255))
+    # Reflejo
+    rr = pr * 0.38
+    draw.ellipse([cx - pr * 0.28 - rr, cy - pr * 0.28 - rr,
+                  cx - pr * 0.28 + rr, cy - pr * 0.28 + rr],
+                 fill=(255, 255, 255, 200))
     return img
 
 ICON_GREEN  = make_icon("#00e475")  # Conectado
 ICON_YELLOW = make_icon("#fabd00")  # Enviando
 ICON_RED    = make_icon("#ff4444")  # Error
-ICON_GREY   = make_icon("#555555")  # Sin config
+ICON_GREY   = make_icon("#888888")  # Sin config / iniciando
 
 # ── Setup dialog (primer arranque) ────────────────────────────────────────────
-def show_setup(on_save):
+def show_setup() -> dict:
+    """Muestra el dialog de configuración y retorna el config guardado. Bloqueante."""
+    result = {}
     root = tk.Tk()
     root.title("Vigil — Configuración")
     root.geometry("400x260")
     root.resizable(False, False)
     root.configure(bg="#131313")
 
-    # Centrar ventana
+    # Icono de la ventana y taskbar
+    try:
+        if getattr(sys, "frozen", False):
+            ico = Path(sys._MEIPASS) / "vigil.ico"
+        else:
+            ico = Path(__file__).parent / "vigil.ico"
+        if ico.exists():
+            root.iconbitmap(str(ico))
+        else:
+            # Fallback: usar la imagen PIL como icono
+            photo = ImageTk.PhotoImage(ICON_GREEN.resize((32, 32)))
+            root.iconphoto(True, photo)
+    except Exception:
+        pass
+
     root.update_idletasks()
     x = (root.winfo_screenwidth()  - 400) // 2
     y = (root.winfo_screenheight() - 260) // 2
@@ -160,8 +237,8 @@ def show_setup(on_save):
         cfg["secret"] = secret
         cfg["server_url"] = "https://marcossantiago.com/win-monitor"
         save_config(cfg)
-        root.destroy()
-        on_save(cfg)
+        result.update(cfg)
+        root.quit()   # sale del mainloop sin destruir todavía
 
     btn = tk.Button(frame, text="Guardar y comenzar", command=on_ok,
                     font=("Segoe UI", 10, "bold"), bg="#00e475", fg="#003918",
@@ -170,6 +247,11 @@ def show_setup(on_save):
     entry.bind("<Return>", on_ok)
 
     root.mainloop()
+    try:
+        root.destroy()
+    except Exception:
+        pass
+    return result
 
 # ── Auto-update ───────────────────────────────────────────────────────────────
 def check_update(cfg, icon):
@@ -293,7 +375,8 @@ def build_menu(cfg, icon_ref):
             msg = f"OK — último envío {last.strftime('%H:%M:%S')}\nEventos enviados: {_status['events']}"
         else:
             msg = "Iniciando..."
-        messagebox.showinfo("Vigil — Estado", msg)
+        # Usar MessageBoxW nativo — funciona desde cualquier thread sin tkinter
+        ctypes.windll.user32.MessageBoxW(0, msg, "Vigil — Estado", 0x40)
 
     def quit_app():
         _stop_event.set()
@@ -339,10 +422,11 @@ def main():
     cfg = load_config()
 
     if not cfg.get("secret"):
-        # Primer arranque — mostrar setup
-        show_setup(lambda c: start_tray(c))
-    else:
-        start_tray(cfg)
+        cfg = show_setup()
+        if not cfg.get("secret"):
+            return  # Usuario cerró sin configurar
+
+    start_tray(cfg)
 
 if __name__ == "__main__":
     main()
