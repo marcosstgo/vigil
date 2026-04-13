@@ -150,6 +150,13 @@ def migrate_db():
     if "user_id" not in ev_cols:
         conn.execute("ALTER TABLE events ADD COLUMN user_id INTEGER")
 
+    # Telegram por usuario
+    usr_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "telegram_token" not in usr_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN telegram_token TEXT")
+    if "telegram_chat_id" not in usr_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN telegram_chat_id TEXT")
+
     # Crear usuario marc0 si no existe (migra datos existentes)
     marc0 = conn.execute("SELECT id FROM users WHERE secret=?", (API_SECRET,)).fetchone()
     if not marc0:
@@ -538,19 +545,20 @@ class EventBatch(BaseModel):
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 # ── Telegram ─────────────────────────────────────────────────────────────────
-def send_telegram(text: str, key: str = "", cooldown: int = 300):
+def send_telegram(text: str, token: str, chat_id: str, key: str = "", cooldown: int = 300):
     """Envía mensaje a Telegram. key+cooldown evitan spam del mismo evento."""
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+    if not token or not chat_id:
         return
     if key:
         now = time.time()
-        if now - _tg_sent.get(key, 0) < cooldown:
+        cache_key = f"{chat_id}:{key}"
+        if now - _tg_sent.get(cache_key, 0) < cooldown:
             return
-        _tg_sent[key] = now
+        _tg_sent[cache_key] = now
     try:
-        url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        url  = f"https://api.telegram.org/bot{token}/sendMessage"
         data = urllib.parse.urlencode({
-            "chat_id":    TELEGRAM_CHAT_ID,
+            "chat_id":    chat_id,
             "text":       text,
             "parse_mode": "HTML"
         }).encode()
@@ -558,14 +566,19 @@ def send_telegram(text: str, key: str = "", cooldown: int = 300):
     except Exception:
         pass
 
-def notify_event(event: dict, category: str, hostname: str = ""):
+def notify_event(event: dict, category: str, user: dict, hostname: str = ""):
     """Decide si un evento merece notificación y la envía."""
+    token   = user.get("telegram_token", "")
+    chat_id = user.get("telegram_chat_id", "")
+    if not token or not chat_id:
+        return
+
     eid   = event.get("event_id", 0)
     level = event.get("level", 9)
     prov  = event.get("provider", "")
     msg   = (event.get("message", "") or "")[:200]
     t     = (event.get("time_created", "") or "")[:16].replace("T", " ")
-    host  = hostname or "MSI Trident X2"
+    host  = hostname or user.get("name", "PC")
 
     # BSOD — prioridad máxima, cooldown 10 min
     if eid in BSOD_IDS:
@@ -577,7 +590,7 @@ def notify_event(event: dict, category: str, hostname: str = ""):
             f"{msg}\n\n"
             f"→ Revisa <code>C:\\Windows\\Minidump</code>"
         )
-        send_telegram(text, key=f"bsod-{t}", cooldown=600)
+        send_telegram(text, token, chat_id, key=f"bsod-{t}", cooldown=600)
         return
 
     # Crítico nivel 1
@@ -590,7 +603,7 @@ def notify_event(event: dict, category: str, hostname: str = ""):
             f"<code>{t}</code>\n\n"
             f"{msg}"
         )
-        send_telegram(text, key=f"crit-{eid}-{t}", cooldown=300)
+        send_telegram(text, token, chat_id, key=f"crit-{eid}-{t}", cooldown=300)
         return
 
     # Error de disco nivel 2
@@ -602,7 +615,7 @@ def notify_event(event: dict, category: str, hostname: str = ""):
             f"<code>{t}</code>\n\n"
             f"{msg}"
         )
-        send_telegram(text, key=f"disk-{eid}-{t}", cooldown=600)
+        send_telegram(text, token, chat_id, key=f"disk-{eid}-{t}", cooldown=600)
         return
 
     # GPU error nivel 2
@@ -614,11 +627,15 @@ def notify_event(event: dict, category: str, hostname: str = ""):
             f"<code>{t}</code>\n\n"
             f"{msg}"
         )
-        send_telegram(text, key=f"gpu-{eid}-{t}", cooldown=600)
+        send_telegram(text, token, chat_id, key=f"gpu-{eid}-{t}", cooldown=600)
 
-def notify_crash_loop(svc_name: str, count: int, action: str, hostname: str = "", ai: bool = False):
+def notify_crash_loop(svc_name: str, count: int, action: str, user: dict, hostname: str = "", ai: bool = False):
     """Notifica cuando un servicio entra en crash loop."""
-    host  = hostname or "MSI Trident X2"
+    token   = user.get("telegram_token", "")
+    chat_id = user.get("telegram_chat_id", "")
+    if not token or not chat_id:
+        return
+    host  = hostname or user.get("name", "PC")
     label = "🤖 IA" if ai else "→"
     text  = (
         f"🔁 <b>VIGIL — Crash Loop</b>\n"
@@ -626,7 +643,7 @@ def notify_crash_loop(svc_name: str, count: int, action: str, hostname: str = ""
         f"<b>{svc_name}</b> se detuvo <b>{count}x</b> en 6h\n\n"
         f"{label} {action[:300]}"
     )
-    send_telegram(text, key=f"loop-{svc_name.lower()}", cooldown=1800)
+    send_telegram(text, token, chat_id, key=f"loop-{svc_name.lower()}", cooldown=1800)
 
 # ── Auth & Users ─────────────────────────────────────────────────────────────
 def make_secret() -> str:
@@ -638,12 +655,16 @@ def get_user(secret: str) -> dict:
     """Retorna el usuario dado su secret, o lanza 401."""
     conn = get_db()
     row  = conn.execute(
-        "SELECT id, name, email FROM users WHERE secret=? AND active=1", (secret,)
+        "SELECT id, name, email, telegram_token, telegram_chat_id FROM users WHERE secret=? AND active=1", (secret,)
     ).fetchone()
     conn.close()
     if not row:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    return {"id": row["id"], "name": row["name"], "email": row["email"]}
+    return {
+        "id": row["id"], "name": row["name"], "email": row["email"],
+        "telegram_token": row["telegram_token"] or "",
+        "telegram_chat_id": row["telegram_chat_id"] or "",
+    }
 
 def auth(secret: str):
     """Compatibilidad — solo valida, no retorna usuario."""
@@ -699,7 +720,7 @@ def receive_events(batch: EventBatch, bg: BackgroundTasks):
                 "event_id": e.event_id, "level": e.level,
                 "provider": e.provider, "message": e.message,
                 "time_created": e.time_created
-            }, cat, host)
+            }, cat, user, host)
 
     conn.commit()
     conn.close()
@@ -867,7 +888,7 @@ def get_issues(secret: str = Query(...)):
         # Notificación Telegram para crash loops
         threading.Thread(
             target=notify_crash_loop,
-            args=(svc_name, row["cnt"], action, "", has_ai),
+            args=(svc_name, row["cnt"], action, user, "", has_ai),
             daemon=True
         ).start()
 
@@ -1230,6 +1251,57 @@ def admin_delete_user(user_id: int, secret: str = Query(...)):
 @app.get("/register", response_class=HTMLResponse)
 def register_page():
     return REGISTER_HTML.replace("__BASE__", BASE_PATH)
+
+@app.get("/api/settings")
+def get_settings(secret: str = Query(...)):
+    user = get_user(secret)
+    conn = get_db()
+    row  = conn.execute(
+        "SELECT telegram_token, telegram_chat_id FROM users WHERE id=?", (user["id"],)
+    ).fetchone()
+    conn.close()
+    return {
+        "telegram_token":   row["telegram_token"]   or "",
+        "telegram_chat_id": row["telegram_chat_id"] or "",
+    }
+
+@app.post("/api/settings")
+def save_settings(secret: str = Query(...),
+                  telegram_token: str = Query(default=""),
+                  telegram_chat_id: str = Query(default="")):
+    user = get_user(secret)
+    conn = get_db()
+    conn.execute(
+        "UPDATE users SET telegram_token=?, telegram_chat_id=? WHERE id=?",
+        (telegram_token.strip() or None, telegram_chat_id.strip() or None, user["id"])
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.post("/api/settings/test-telegram")
+def test_telegram(secret: str = Query(...)):
+    user = get_user(secret)
+    conn = get_db()
+    row  = conn.execute(
+        "SELECT telegram_token, telegram_chat_id FROM users WHERE id=?", (user["id"],)
+    ).fetchone()
+    conn.close()
+    token   = (row["telegram_token"]   or "").strip()
+    chat_id = (row["telegram_chat_id"] or "").strip()
+    if not token or not chat_id:
+        raise HTTPException(400, "Configura el Bot Token y el Chat ID primero")
+    try:
+        url  = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = urllib.parse.urlencode({
+            "chat_id":    chat_id,
+            "text":       f"✅ <b>Vigil conectado</b>\n\nHola <b>{user['name']}</b>, recibirás alertas aquí cuando tu PC tenga eventos críticos.",
+            "parse_mode": "HTML"
+        }).encode()
+        urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=10)
+    except Exception as e:
+        raise HTTPException(502, f"No se pudo enviar: {e}")
+    return {"ok": True}
 
 @app.post("/api/register")
 def register(name: str = Query(...), email: str = Query(default="")):
@@ -2045,6 +2117,12 @@ body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
        onmouseout="this.style.background='';this.style.color='rgba(198,198,203,.6)'">
       <span class="material-symbols-outlined text-[18px]">crisis_alert</span>Incidentes
     </a>
+    <a class="flex items-center gap-3 p-2.5 rounded-xl font-headline uppercase text-xs tracking-widest transition-all cursor-pointer"
+       style="color:rgba(198,198,203,.6)" href="#sec-settings"
+       onmouseover="this.style.background='rgba(32,31,31,1)';this.style.color='#e5e2e1'"
+       onmouseout="this.style.background='';this.style.color='rgba(198,198,203,.6)'">
+      <span class="material-symbols-outlined text-[18px]">settings</span>Configuración
+    </a>
   </nav>
 
   <!-- Stats -->
@@ -2315,6 +2393,66 @@ body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
         </table>
         <div id="empty" class="py-16 text-center text-sm font-body" style="display:none;color:rgba(198,198,203,.2)">
           Sin eventos registrados.
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SECTION: Settings ── -->
+    <section id="sec-settings">
+      <div class="flex items-center gap-4 mb-6">
+        <h2 class="font-headline text-lg font-bold text-on-surface">Configuración</h2>
+        <div class="flex-1 h-px" style="background:rgba(69,71,75,.15)"></div>
+      </div>
+
+      <!-- Telegram card -->
+      <div class="rounded-2xl p-6 mb-4" style="background:#161616;border:1px solid rgba(69,71,75,.25)">
+        <div class="flex items-center gap-3 mb-1">
+          <span class="material-symbols-outlined text-primary text-xl">send</span>
+          <h3 class="font-headline font-semibold text-on-surface">Alertas en Telegram</h3>
+        </div>
+        <p class="text-xs mb-5" style="color:rgba(198,198,203,.45);line-height:1.6">
+          Recibe alertas críticas en tu teléfono. Necesitas un bot de Telegram y tu Chat ID.
+        </p>
+
+        <!-- Instrucciones -->
+        <div class="rounded-xl p-4 mb-5 text-xs" style="background:rgba(0,228,117,.05);border:1px solid rgba(0,228,117,.12);color:rgba(198,198,203,.6);line-height:1.8">
+          <p class="font-semibold mb-2" style="color:#00e475">Cómo configurarlo:</p>
+          <p>1. Abre Telegram y busca <code style="background:rgba(0,0,0,.3);padding:1px 5px;border-radius:3px">@BotFather</code></p>
+          <p>2. Escribe <code style="background:rgba(0,0,0,.3);padding:1px 5px;border-radius:3px">/newbot</code> y sigue las instrucciones → copia el <b style="color:#e5e2e1">Bot Token</b></p>
+          <p>3. Abre tu bot, escríbele "hola", luego entra a <code style="background:rgba(0,0,0,.3);padding:1px 5px;border-radius:3px">@userinfobot</code> → copia tu <b style="color:#e5e2e1">Chat ID</b></p>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 mb-4" style="max-width:520px">
+          <div>
+            <label class="block text-xs font-semibold mb-2" style="color:rgba(198,198,203,.5);text-transform:uppercase;letter-spacing:.5px">Bot Token</label>
+            <input id="tg-token" type="text" placeholder="123456789:AAF..."
+              class="w-full rounded-xl text-sm outline-none"
+              style="background:#1e1e1e;border:1.5px solid #2e2e2e;color:#e5e2e1;padding:12px 16px;font-family:monospace;transition:border-color .15s"
+              onfocus="this.style.borderColor='#00e475'" onblur="this.style.borderColor='#2e2e2e'">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-2" style="color:rgba(198,198,203,.5);text-transform:uppercase;letter-spacing:.5px">Chat ID</label>
+            <input id="tg-chatid" type="text" placeholder="123456789"
+              class="w-full rounded-xl text-sm outline-none"
+              style="background:#1e1e1e;border:1.5px solid #2e2e2e;color:#e5e2e1;padding:12px 16px;font-family:monospace;transition:border-color .15s"
+              onfocus="this.style.borderColor='#00e475'" onblur="this.style.borderColor='#2e2e2e'">
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button onclick="saveTelegram()"
+            class="text-sm font-headline font-bold rounded-xl px-5 py-2.5 cursor-pointer transition-all"
+            style="background:#00e475;color:#003918;border:none"
+            onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter=''">
+            Guardar
+          </button>
+          <button onclick="testTelegram()"
+            class="text-sm font-headline font-semibold rounded-xl px-5 py-2.5 cursor-pointer transition-all"
+            style="background:transparent;border:1.5px solid rgba(69,71,75,.5);color:rgba(198,198,203,.7)"
+            onmouseover="this.style.borderColor='#00e475';this.style.color='#00e475'" onmouseout="this.style.borderColor='rgba(69,71,75,.5)';this.style.color='rgba(198,198,203,.7)'">
+            Enviar prueba
+          </button>
+          <span id="tg-status" class="text-xs" style="color:rgba(198,198,203,.4)"></span>
         </div>
       </div>
     </section>
@@ -2741,6 +2879,47 @@ function toggleAR() {
 }
 
 load();
+loadSettings();
+
+/* ── Settings ────────────────────────────────────────────────────── */
+async function loadSettings() {
+  try {
+    const r = await fetch(`${BASE}/api/settings?secret=${SECRET}`);
+    const d = await r.json();
+    document.getElementById("tg-token").value  = d.telegram_token   || "";
+    document.getElementById("tg-chatid").value = d.telegram_chat_id || "";
+  } catch(e) {}
+}
+
+async function saveTelegram() {
+  const token  = document.getElementById("tg-token").value.trim();
+  const chatid = document.getElementById("tg-chatid").value.trim();
+  const status = document.getElementById("tg-status");
+  status.textContent = "Guardando…"; status.style.color = "rgba(198,198,203,.4)";
+  try {
+    const r = await fetch(`${BASE}/api/settings?secret=${SECRET}&telegram_token=${encodeURIComponent(token)}&telegram_chat_id=${encodeURIComponent(chatid)}`, { method: "POST" });
+    if (!r.ok) throw new Error();
+    status.textContent = "✓ Guardado"; status.style.color = "#00e475";
+  } catch(e) {
+    status.textContent = "Error al guardar"; status.style.color = "#ffb4ab";
+  }
+  setTimeout(() => { status.textContent = ""; }, 3000);
+}
+
+async function testTelegram() {
+  const status = document.getElementById("tg-status");
+  status.textContent = "Enviando…"; status.style.color = "rgba(198,198,203,.4)";
+  try {
+    const r = await fetch(`${BASE}/api/settings/test-telegram?secret=${SECRET}`, { method: "POST" });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "Error");
+    status.textContent = "✓ Mensaje enviado"; status.style.color = "#00e475";
+  } catch(e) {
+    status.textContent = e.message || "Error al enviar"; status.style.color = "#ffb4ab";
+  }
+  setTimeout(() => { status.textContent = ""; }, 4000);
+}
+
 </script>
 </body>
 </html>"""
