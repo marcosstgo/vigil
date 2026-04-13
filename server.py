@@ -13,10 +13,28 @@ CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
 DB_PATH       = os.environ.get("DB_PATH", "/home/corillo-adm/win-monitor/monitor.db")
 BASE_PATH     = "/win-monitor"
 
-# ── BSOD / Disk / Service event IDs de alto interes
+# ── Event ID sets por categoría
 BSOD_IDS    = {41, 1001, 6008}
-DISK_IDS    = {7, 11, 51, 52, 55, 57, 153, 157}
-SERVICE_IDS = {7022, 7023, 7024, 7031, 7034, 7038}
+DISK_IDS    = {7, 11, 51, 52, 55, 57, 153, 157, 158, 244}
+SERVICE_IDS = {7022, 7023, 7024, 7031, 7034, 7038, 7040}
+GPU_IDS     = {4101, 14, 13, 204}
+NET_IDS     = {1014, 4227, 4231, 10317, 10400, 4001, 8003, 8004, 27}
+DRIVER_IDS  = {219, 411, 5, 7026, 15, 20003}
+POWER_IDS   = {42, 107, 566, 12, 505, 506}
+UPDATE_IDS  = {19, 20, 43, 44, 16, 17, 25}
+SEC_IDS     = {4625, 4648, 4719, 4740, 4771, 4776, 4625}
+
+# ── Provider keyword maps
+_DISK_PROV    = {"disk","volmgr","ntfs","storport","storahci","nvme","stornvme","iastoravc","partmgr","cdrom","scsi"}
+_GPU_PROV     = {"nvidia","nvlddmkm","display","dxgkrnl","dxgmms","igfx","amdkmdap","atikmdag","atikmpag"}
+_NET_PROV     = {"tcpip","netbt","dnsclient","dns","ndis","netlogon","nsi","wlan","wlanautoconfig","wifi","dhcp","netadapter","rpc"}
+_DRIVER_PROV  = {"pnp","pnpmgr","plugplay","hal","acpimsft","filters","mup","bowser"}
+_POWER_PROV   = {"kernel-power","acpi","battery","sleepstudy","powercfg"}
+_UPDATE_PROV  = {"windowsupdateclient","wuauserv","trustedinstaller","msiinstaller","servicing","cbshandler"}
+_SEC_PROV     = {"microsoft-windows-security","schannel","lsasrv","netlogon","kerberos","sam","audit"}
+_AV_PROV      = {"defender","msmpeng","windefend","malwarebytes","eset","avast","avg","norton","mcafee","crowdstrike"}
+_KERNEL_PROV  = {"kernel-general","kernel-process","kernel-pnp","kernel-eventtracing","kernel"}
+_BROWSER_APPS = {"chrome","brave","firefox","msedge","opera","vivaldi","chromium"}
 
 # ── DB ───────────────────────────────────────────────────────────────────────
 def get_db():
@@ -103,22 +121,91 @@ def migrate_db():
 
 migrate_db()
 
+def recategorize_db():
+    """Re-categoriza eventos existentes con la lógica nueva."""
+    conn = get_db()
+    rows = conn.execute("SELECT id, event_id, provider, message FROM events").fetchall()
+    updated = 0
+    for row in rows:
+        new_cat = categorize(row["event_id"], row["provider"] or "", row["message"] or "")
+        conn.execute("UPDATE events SET category=? WHERE id=?", (new_cat, row["id"]))
+        updated += 1
+    conn.commit()
+    conn.close()
+    return updated
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
-def categorize(event_id: int, provider: str) -> str:
-    if event_id in BSOD_IDS:
+def categorize(event_id: int, provider: str, message: str = "") -> str:
+    """Clasifica un evento por categoría usando ID, proveedor y contenido del mensaje.
+    Prioridad: BSOD > DISCO > GPU > RED > DRIVER > ENERGIA > ACTUALIZACION >
+               SEGURIDAD > ANTIVIRUS > KERNEL > BROWSER > SERVICIO > APP_CRASH > SISTEMA
+    """
+    p = provider.lower()
+    m = message.lower()
+
+    # 1. BSOD — prioridad máxima
+    if event_id in BSOD_IDS or "bugcheck" in m or "bug check" in m:
         return "BSOD"
-    if event_id in DISK_IDS or "disk" in provider.lower() or "volmgr" in provider.lower() or "ntfs" in provider.lower():
+
+    # 2. DISCO — hardware de almacenamiento
+    if event_id in DISK_IDS or any(k in p for k in _DISK_PROV):
         return "DISCO"
-    if event_id in SERVICE_IDS:
-        return "SERVICIO"
-    if "nvidia" in provider.lower() or "display" in provider.lower():
+
+    # 3. GPU — tarjeta gráfica y display drivers
+    if event_id in GPU_IDS or any(k in p for k in _GPU_PROV):
         return "GPU"
-    if "defender" in provider.lower() or "msmpeng" in provider.lower() or "windefend" in provider.lower():
+
+    # 4. RED — conectividad y protocolos de red
+    if event_id in NET_IDS or any(k in p for k in _NET_PROV):
+        return "RED"
+
+    # 5. DRIVER — fallos de carga de drivers genéricos
+    if event_id in DRIVER_IDS or any(k in p for k in _DRIVER_PROV):
+        return "DRIVER"
+
+    # 6. ENERGIA — apagados, suspensión, energía inesperada
+    if event_id in POWER_IDS or any(k in p for k in _POWER_PROV):
+        return "ENERGIA"
+
+    # 7. ACTUALIZACION — Windows Update y MSI installs
+    if event_id in UPDATE_IDS or any(k in p for k in _UPDATE_PROV):
+        return "ACTUALIZACION"
+
+    # 8. SEGURIDAD — fallos de autenticación, auditoría
+    if event_id in SEC_IDS or any(k in p for k in _SEC_PROV):
+        return "SEGURIDAD"
+
+    # 9. ANTIVIRUS — Defender y otros AV
+    if any(k in p for k in _AV_PROV):
         return "ANTIVIRUS"
-    if "kernel" in provider.lower():
+
+    # 10. KERNEL — componentes del núcleo
+    if any(k in p for k in _KERNEL_PROV) or "kernel" in p:
         return "KERNEL"
-    if event_id == 1000:
+
+    # 11. SERVICIO — con reclasificación por mensaje
+    if event_id in SERVICE_IDS:
+        if any(b in m for b in _BROWSER_APPS):
+            return "BROWSER"
+        if any(k in m for k in ("network", "dns", "dhcp", "wlan", "wifi", "ethernet")):
+            return "RED"
+        if any(k in m for k in ("update", "wuauserv", "trustedinstaller")):
+            return "ACTUALIZACION"
+        if any(k in m for k in ("defender", "antivirus", "msmpeng")):
+            return "ANTIVIRUS"
+        if any(k in m for k in ("nvidia", "display", "gpu", "dxgi")):
+            return "GPU"
+        return "SERVICIO"
+
+    # 12. BROWSER — crashes de browsers (event 1000/1002 con app conocida)
+    if event_id in (1000, 1002) and any(b in m for b in _BROWSER_APPS):
+        return "BROWSER"
+
+    # 13. APP_CRASH — cualquier otro crash de aplicación
+    if event_id in (1000, 1002, 1005, 1026):
         return "APP_CRASH"
+
+    # 14. SISTEMA — fallback
     return "SISTEMA"
 
 def run_incident_analysis(inc_id: int, bsod: dict, chain: list):
@@ -326,7 +413,7 @@ def receive_events(batch: EventBatch, bg: BackgroundTasks):
               m.disk_write_mbps, m.smart_disks, m.browser_crashes, m.disks))
 
     for e in batch.events:
-        cat = categorize(e.event_id, e.provider)
+        cat = categorize(e.event_id, e.provider, e.message)
         cur = conn.execute("""
             INSERT INTO events (received_at,time_created,event_id,level,level_name,
                 log_name,provider,message,category,hostname,username)
@@ -337,7 +424,8 @@ def receive_events(batch: EventBatch, bg: BackgroundTasks):
               batch.metrics.username if batch.metrics else None))
         count += 1
         # Auto-analizar BSODs y disk errors críticos
-        if e.level <= 2 and (cat in ("BSOD", "DISCO", "ANTIVIRUS") or e.event_id in BSOD_IDS):
+        AUTO_ANALYZE_CATS = {"BSOD","DISCO","GPU","DRIVER","RED","ENERGIA","ANTIVIRUS","BROWSER","SERVICIO"}
+        if e.level <= 2 and (cat in AUTO_ANALYZE_CATS or e.event_id in BSOD_IDS):
             auto_ids.append(cur.lastrowid)
         # Correlación de incidente para BSODs
         if e.event_id in BSOD_IDS:
@@ -414,22 +502,85 @@ def get_issues(secret: str = Query(...)):
         })
 
     # Servicio crasheando en loop (3+ veces en 2h)
+    # Acciones conocidas por servicio
+    SERVICE_ACTIONS = {
+        "windows search":        ("Reconstruir índice: detener WSearch, borrar C:\\ProgramData\\Microsoft\\Search\\Data\\Applications\\Windows, reiniciar WSearch", "high"),
+        "wsearch":               ("Reconstruir índice: detener WSearch, borrar C:\\ProgramData\\Microsoft\\Search\\Data\\Applications\\Windows, reiniciar WSearch", "high"),
+        "windows update":        ("Ejecutar: sfc /scannow y DISM /RestoreHealth. Revisar C:\\Windows\\Logs\\WindowsUpdate", "high"),
+        "wuauserv":              ("Ejecutar: sfc /scannow y DISM /RestoreHealth. Revisar C:\\Windows\\Logs\\WindowsUpdate", "high"),
+        "windows defender":      ("MpCmdRun.exe -RemoveDefinitions -All && -SignatureUpdate", "medium"),
+        "windefend":             ("MpCmdRun.exe -RemoveDefinitions -All && -SignatureUpdate", "medium"),
+        "nvidia":                ("Reinstalar driver NVIDIA limpio con DDU en Safe Mode", "high"),
+        "wmi":                   ("winmgmt /resetrepository en cmd admin", "high"),
+        "winmgmt":               ("winmgmt /resetrepository en cmd admin", "high"),
+        "print spooler":         ("net stop spooler, borrar C:\\Windows\\System32\\spool\\PRINTERS\\*, net start spooler", "medium"),
+        "spooler":               ("net stop spooler, borrar C:\\Windows\\System32\\spool\\PRINTERS\\*, net start spooler", "medium"),
+        "superfetch":            ("Deshabilitar SysMain si tienes SSD: services.msc → SysMain → Disabled", "low"),
+        "sysmain":               ("Deshabilitar SysMain si tienes SSD: services.msc → SysMain → Disabled", "low"),
+        "dhcp":                  ("ipconfig /release && ipconfig /renew. Revisar adaptador de red", "high"),
+        "dns":                   ("ipconfig /flushdns. Revisar configuración de red", "medium"),
+    }
+
+    import re as _re
     loops = conn.execute("""
-        SELECT provider, COUNT(*) as cnt
+        SELECT event_id, message, COUNT(*) as cnt,
+               MAX(time_created) as last_seen
         FROM events
-        WHERE event_id IN (7031,7034,7023,7024,1000)
-          AND time_created > datetime('now','-2 hours')
-        GROUP BY provider
+        WHERE event_id IN (7031,7034,7023,7024)
+          AND time_created > datetime('now','-6 hours')
+        GROUP BY event_id, message
         HAVING COUNT(*) >= 3
         ORDER BY cnt DESC
+        LIMIT 10
     """).fetchall()
+    seen_services = set()
     for row in loops:
+        msg = row["message"] or ""
+        # Extraer nombre del servicio del mensaje: "The X service terminated..."
+        m = _re.search(r"The (.+?) service (terminated|crashed|stopped)", msg, _re.IGNORECASE)
+        svc_name = m.group(1).strip() if m else "Servicio desconocido"
+        svc_key = svc_name.lower()
+        if svc_key in seen_services:
+            continue
+        seen_services.add(svc_key)
+        # Buscar accion conocida
+        action = next(
+            (act for key, (act, _) in SERVICE_ACTIONS.items() if key in svc_key),
+            f"Revisar Event Viewer → System, buscar errores relacionados con '{svc_name}' y ejecutar sfc /scannow"
+        )
+        severity = next(
+            (sev for key, (_, sev) in SERVICE_ACTIONS.items() if key in svc_key),
+            "high"
+        )
+        issues.append({
+            "severity": severity,
+            "type":     "CRASH_LOOP",
+            "title":    f"{svc_name} se detuvo {row['cnt']}x en 6h",
+            "detail":   msg[:150] if msg else "Loop de reinicios detectado",
+            "action":   action
+        })
+
+    # App crashes en loop (3+ veces en 2h, event 1000)
+    app_loops = conn.execute("""
+        SELECT message, COUNT(*) as cnt
+        FROM events
+        WHERE event_id = 1000
+          AND time_created > datetime('now','-2 hours')
+        GROUP BY message
+        HAVING COUNT(*) >= 3
+        ORDER BY cnt DESC
+        LIMIT 5
+    """).fetchall()
+    for row in app_loops:
+        msg = row["message"] or ""
+        m = _re.search(r"Faulting application name: ([^,]+)", msg)
+        app_name = m.group(1).strip() if m else "Aplicación desconocida"
         issues.append({
             "severity": "high",
             "type":     "CRASH_LOOP",
-            "title":    f"{row['provider']} crasheó {row['cnt']}x en 2h",
-            "detail":   "Loop de reinicios detectado",
-            "action":   f"Reinstala o actualiza {row['provider']}"
+            "title":    f"{app_name} crasheó {row['cnt']}x en 2h",
+            "detail":   msg[:150],
+            "action":   f"Reinstalar {app_name} o revisar extensiones/plugins. Verificar logs en %LOCALAPPDATA%\\CrashDumps"
         })
 
     # Errores de disco en las últimas 24h
@@ -469,6 +620,87 @@ def get_issues(secret: str = Query(...)):
             "title":    f"Windows Defender crasheó {av_errors}x en 6h",
             "detail":   "Definiciones corruptas o motor inestable",
             "action":   "MpCmdRun.exe -RemoveDefinitions -All && -SignatureUpdate"
+        })
+
+    # RED — errores de red repetidos
+    net_errors = conn.execute(
+        "SELECT COUNT(*) FROM events WHERE category='RED' AND time_created > datetime('now','-2 hours')"
+    ).fetchone()[0]
+    if net_errors >= 3:
+        last_net = conn.execute(
+            "SELECT provider, message FROM events WHERE category='RED' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        issues.append({
+            "severity": "medium",
+            "type":     "RED",
+            "title":    f"{net_errors} errores de red en 2h",
+            "detail":   last_net["message"][:150] if last_net else "",
+            "action":   "Verificar adaptador de red, ipconfig /release+renew, revisar DNS"
+        })
+
+    # DRIVER — fallo al cargar driver
+    driver_errors = conn.execute(
+        "SELECT COUNT(*), message FROM events WHERE category='DRIVER' AND time_created > datetime('now','-24 hours') LIMIT 1"
+    ).fetchone()
+    if driver_errors and driver_errors[0] >= 1:
+        issues.append({
+            "severity": "high",
+            "type":     "DRIVER",
+            "title":    f"{driver_errors[0]} fallo(s) de driver en 24h",
+            "detail":   driver_errors[1][:150] if driver_errors[1] else "",
+            "action":   "Revisar Device Manager → buscar triángulos amarillos. Actualizar o reinstalar driver."
+        })
+
+    # ENERGIA — apagados inesperados (que no sean BSODs)
+    power_events = conn.execute(
+        "SELECT COUNT(*) FROM events WHERE category='ENERGIA' AND time_created > datetime('now','-24 hours')"
+    ).fetchone()[0]
+    if power_events >= 2:
+        issues.append({
+            "severity": "medium",
+            "type":     "ENERGIA",
+            "title":    f"{power_events} eventos de energía anómalos en 24h",
+            "detail":   "Posible fallo de fuente de poder o configuración de energía",
+            "action":   "Revisar Event ID 41/6008. Verificar fuente de poder y configuración de suspensión."
+        })
+
+    # BROWSER — crashes de browsers
+    browser_crashes = conn.execute(
+        "SELECT COUNT(*), message FROM events WHERE category='BROWSER' AND time_created > datetime('now','-24 hours') LIMIT 1"
+    ).fetchone()
+    if browser_crashes and browser_crashes[0] >= 3:
+        issues.append({
+            "severity": "medium",
+            "type":     "BROWSER",
+            "title":    f"{browser_crashes[0]} crashes de browser en 24h",
+            "detail":   browser_crashes[1][:150] if browser_crashes[1] else "",
+            "action":   "Deshabilitar extensiones (--disable-extensions) para aislar la causa. Reinstalar si persiste."
+        })
+
+    # SEGURIDAD — fallos de autenticación repetidos
+    sec_events = conn.execute(
+        "SELECT COUNT(*) FROM events WHERE category='SEGURIDAD' AND event_id=4625 AND time_created > datetime('now','-1 hours')"
+    ).fetchone()[0]
+    if sec_events >= 5:
+        issues.append({
+            "severity": "critical",
+            "type":     "SEGURIDAD",
+            "title":    f"{sec_events} fallos de login en 1h",
+            "detail":   "Posible ataque de fuerza bruta o usuario bloqueado",
+            "action":   "Revisar Security log → Event 4625. Verificar intentos de acceso remoto (RDP/SSH)."
+        })
+
+    # ACTUALIZACION — fallos de update
+    update_fails = conn.execute(
+        "SELECT COUNT(*) FROM events WHERE category='ACTUALIZACION' AND level <= 2 AND time_created > datetime('now','-24 hours')"
+    ).fetchone()[0]
+    if update_fails >= 1:
+        issues.append({
+            "severity": "low",
+            "type":     "ACTUALIZACION",
+            "title":    f"{update_fails} error(es) de Windows Update en 24h",
+            "detail":   "Actualización fallida",
+            "action":   "Ejecutar: DISM /Online /Cleanup-Image /RestoreHealth && sfc /scannow"
         })
 
     conn.close()
@@ -590,6 +822,13 @@ def clear_events(secret: str = Query(...)):
     conn.close()
     return {"ok": True}
 
+@app.post("/api/recategorize")
+def recategorize(secret: str = Query(...)):
+    """Re-categoriza todos los eventos existentes con la lógica actual."""
+    auth(secret)
+    updated = recategorize_db()
+    return {"updated": updated}
+
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 def dashboard(secret: str = Query(...)):
@@ -622,7 +861,7 @@ body{background:#09090f;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-seri
 /* ── LAYOUT ── */
 .page{display:grid;grid-template-columns:280px 1fr;grid-template-rows:auto 1fr;gap:0;height:calc(100vh - 48px)}
 .sidebar{grid-column:1;grid-row:1/3;background:#0c0c14;border-right:1px solid #1a1a28;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:14px}
-.main{grid-column:2;grid-row:1/3;overflow-y:auto;display:flex;flex-direction:column}
+.main{grid-column:2;grid-row:1/3;overflow:auto;display:flex;flex-direction:column}
 
 /* ── SIDEBAR — Health cards ── */
 .s-section{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#374151;margin-bottom:6px;padding-left:2px}
@@ -689,15 +928,18 @@ body{background:#09090f;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-seri
 .issue.critical{border-color:#7f1d1d;background:#150505}
 .issue.high    {border-color:#7c2d12;background:#140a03}
 .issue.medium  {border-color:#713f12;background:#130f02}
+.issue.low     {border-color:#1e3a1e;background:#030f03}
 .issue-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:4px}
 .critical .issue-dot{background:#f87171}
 .high     .issue-dot{background:#fb923c}
 .medium   .issue-dot{background:#fbbf24}
+.low      .issue-dot{background:#4ade80}
 .issue-body{flex:1}
 .issue-title{font-size:12px;font-weight:600;margin-bottom:3px}
 .critical .issue-title{color:#f87171}
 .high     .issue-title{color:#fb923c}
 .medium   .issue-title{color:#fbbf24}
+.low      .issue-title{color:#4ade80}
 .issue-action{font-size:11px;color:#475569}
 
 .ok-bar{padding:10px 20px;border-bottom:1px solid #1a1a28;display:flex;align-items:center;gap:8px}
@@ -735,8 +977,8 @@ body{background:#09090f;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-seri
 .toolbar select:focus{outline:none;border-color:#4338ca}
 .ev-count{color:#374151;font-size:11px;margin-left:auto}
 
-.twrap{flex:1;overflow-x:auto}
-table{width:100%;border-collapse:collapse}
+.twrap{flex:1;min-width:0}
+table{width:100%;border-collapse:collapse;min-width:820px}
 th{background:#0c0c14;color:#2d2d45;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:7px 12px;text-align:left;border-bottom:1px solid #1a1a28;white-space:nowrap;position:sticky;top:41px;z-index:4}
 tr.erow{border-bottom:1px solid #111120;cursor:default}
 tr.erow:hover{background:#0f0f1a}
@@ -747,18 +989,24 @@ td{padding:7px 12px;vertical-align:middle}
 .b-critical{background:#2d0505;color:#f87171}
 .b-error   {background:#2d1200;color:#fb923c}
 .b-warning {background:#221a00;color:#fbbf24}
-.b-BSOD    {background:#1e0a4a;color:#c084fc}
-.b-DISCO   {background:#051528;color:#60a5fa}
-.b-SERVICIO{background:#051a14;color:#34d399}
-.b-GPU     {background:#1a1800;color:#facc15}
-.b-ANTIVIRUS{background:#180518;color:#e879f9}
-.b-APP_CRASH{background:#2d0505;color:#f87171}
-.b-KERNEL  {background:#1a0a00;color:#fb923c}
-.b-SISTEMA {background:#111120;color:#475569}
+.b-BSOD       {background:#1e0a4a;color:#c084fc}
+.b-DISCO      {background:#051528;color:#60a5fa}
+.b-SERVICIO   {background:#051a14;color:#34d399}
+.b-GPU        {background:#1a1800;color:#facc15}
+.b-ANTIVIRUS  {background:#180518;color:#e879f9}
+.b-APP_CRASH  {background:#2d0505;color:#f87171}
+.b-KERNEL     {background:#1a0a00;color:#fb923c}
+.b-SISTEMA    {background:#111120;color:#475569}
+.b-RED        {background:#021a2a;color:#38bdf8}
+.b-DRIVER     {background:#1a0f00;color:#f97316}
+.b-ENERGIA    {background:#1a1500;color:#fde047}
+.b-ACTUALIZACION{background:#001a14;color:#4ade80}
+.b-SEGURIDAD  {background:#2a0505;color:#fca5a5}
+.b-BROWSER    {background:#001a1a;color:#2dd4bf}
 .b-System      {background:#13104a;color:#818cf8}
 .b-Application {background:#03211a;color:#34d399}
 
-.time-col{color:#2d2d45;font-size:11px;white-space:nowrap}
+.time-col{color:#64748b;font-size:11px;white-space:nowrap}
 .prov-col{color:#5b21b6;font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .msg-col{color:#374151;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;transition:color .15s}
 .msg-col:hover{color:#e2e8f0}
@@ -907,13 +1155,28 @@ td{padding:7px 12px;vertical-align:middle}
       </select>
       <select id="fcat" onchange="load()">
         <option value="">Todas las categorías</option>
-        <option value="BSOD">BSOD</option>
-        <option value="DISCO">Disco</option>
-        <option value="SERVICIO">Servicio</option>
-        <option value="GPU">GPU</option>
-        <option value="ANTIVIRUS">Antivirus</option>
-        <option value="APP_CRASH">App Crash</option>
-        <option value="KERNEL">Kernel</option>
+        <optgroup label="── Sistema">
+          <option value="BSOD">BSOD</option>
+          <option value="KERNEL">Kernel</option>
+          <option value="ENERGIA">Energía</option>
+          <option value="DRIVER">Driver</option>
+        </optgroup>
+        <optgroup label="── Hardware">
+          <option value="DISCO">Disco</option>
+          <option value="GPU">GPU</option>
+        </optgroup>
+        <optgroup label="── Software">
+          <option value="SERVICIO">Servicio</option>
+          <option value="APP_CRASH">App Crash</option>
+          <option value="BROWSER">Browser</option>
+          <option value="ACTUALIZACION">Actualización</option>
+        </optgroup>
+        <optgroup label="── Red & Seguridad">
+          <option value="RED">Red</option>
+          <option value="SEGURIDAD">Seguridad</option>
+          <option value="ANTIVIRUS">Antivirus</option>
+        </optgroup>
+        <option value="SISTEMA">Sistema</option>
       </select>
       <span class="ev-count" id="ev-count"></span>
     </div>
@@ -1117,10 +1380,10 @@ function renderIncidents(incidents) {
   bar.style.display = "";
 
   list.innerHTML = incidents.map(inc => {
-    const t = (inc.time_created||"").replace("T"," ").substring(0,16);
+    const t = fmt(inc.time_created);
     const chainHtml = (inc.chain||[]).map(e => `
       <div class="inc-event">
-        <span class="inc-ev-time">${(e.time_created||"").substring(11,19)}</span>
+        <span class="inc-ev-time">${fmtTime(e.time_created)}</span>
         <span class="inc-ev-cat"><span class="badge b-${e.category||'SISTEMA'}">${e.category||'SIS'}</span></span>
         <span class="inc-ev-msg" title="${(e.message||"").replace(/"/g,"'")}">
           ${e.provider} — ${(e.message||"").substring(0,80)}
@@ -1166,7 +1429,18 @@ function analyzeIncident(incId, btn) {
   }).catch(() => { btn.disabled=false; btn.textContent="Error"; });
 }
 
-function fmt(t) { return t ? t.replace("T"," ").substring(0,16) : "—"; }
+function fmt(t) {
+  if (!t) return "—";
+  const d = new Date(t);
+  const date = d.toLocaleDateString("en-US", {month:"2-digit",day:"2-digit"});
+  const time = d.toLocaleTimeString("en-US", {hour:"2-digit",minute:"2-digit",hour12:true});
+  return `${date} ${time}`;
+}
+function fmtTime(t) {
+  if (!t) return "—";
+  const d = new Date(t);
+  return d.toLocaleTimeString("en-US", {hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true});
+}
 
 function load() {
   const lvl = document.getElementById("fl").value;
@@ -1189,7 +1463,7 @@ function load() {
     const bcEl = document.getElementById("s-browser");
     bcEl.textContent = bc != null ? bc : "—";
     bcEl.style.color = bc > 0 ? "#38bdf8" : "#475569";
-    document.getElementById("upd").textContent = new Date().toLocaleTimeString();
+    document.getElementById("upd").textContent = new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true});
 
     if (s.snapshot) renderHealth(s.snapshot);
     renderIssues(iss.issues);
