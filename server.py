@@ -1446,6 +1446,17 @@ document.getElementById("inp-name").addEventListener("keydown", e => {
 </html>
 """
 
+CLIENT_VERSION = "1.0.0"
+CLIENT_DOWNLOAD_URL = ""  # URL del .exe en GitHub Releases — actualizar al publicar
+
+@app.get("/api/version")
+def get_version():
+    """Versión actual del cliente disponible para auto-update."""
+    return {
+        "version":      CLIENT_VERSION,
+        "download_url": CLIENT_DOWNLOAD_URL,
+    }
+
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 def dashboard(secret: str = Query(...)):
