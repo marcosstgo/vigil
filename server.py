@@ -1457,6 +1457,295 @@ def get_version():
         "download_url": CLIENT_DOWNLOAD_URL,
     }
 
+# ── Landing page ──────────────────────────────────────────────────────────────
+@app.get("/vigil", response_class=HTMLResponse)
+@app.get("/vigil/", response_class=HTMLResponse)
+def landing():
+    return LANDING_HTML.replace("__BASE__", BASE_PATH)
+
+LANDING_HTML = r"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vigil — Monitor de PC para Windows</title>
+<meta name="description" content="Vigil monitorea tu PC en tiempo real: eventos, hardware, crashes y diagnóstico con IA. Gratis.">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@400,0&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: { brand: "#00e475", dark: "#0e0e0e", surface: "#161616", card: "#1a1a1a" },
+      fontFamily: { grotesk: ["Space Grotesk", "sans-serif"] }
+    }
+  }
+}
+</script>
+<style>
+  *, body { font-family: "Space Grotesk", sans-serif; }
+  .glow { box-shadow: 0 0 40px #00e47533, 0 0 80px #00e47511; }
+  .card-hover { transition: transform .2s, box-shadow .2s; }
+  .card-hover:hover { transform: translateY(-4px); box-shadow: 0 8px 32px #00e47522; }
+  .step-line::after {
+    content: "";
+    position: absolute;
+    top: 2.5rem;
+    left: calc(50% + 2.5rem);
+    width: calc(100% - 5rem);
+    height: 1px;
+    background: linear-gradient(90deg, #00e47555, transparent);
+  }
+  .eye-logo {
+    display: inline-block;
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+</style>
+</head>
+<body class="bg-dark text-white min-h-screen">
+
+<!-- NAV -->
+<nav class="fixed top-0 left-0 right-0 z-50 bg-dark/80 backdrop-blur-md border-b border-white/5">
+  <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="32" cy="32" r="28" fill="#121212" stroke="#00e475" stroke-width="3"/>
+        <ellipse cx="32" cy="32" rx="17" ry="8.5" fill="#00e47508" stroke="#00e475" stroke-width="2"/>
+        <circle cx="32" cy="32" r="6" fill="#00e475"/>
+        <circle cx="29.5" cy="29.5" r="2" fill="white" opacity=".7"/>
+      </svg>
+      <span class="text-xl font-semibold tracking-tight">Vigil</span>
+    </div>
+    <div class="flex items-center gap-6 text-sm text-white/60">
+      <a href="#features" class="hover:text-white transition-colors">Características</a>
+      <a href="#how" class="hover:text-white transition-colors">Cómo funciona</a>
+      <a href="__BASE__/register" class="bg-brand text-[#003918] font-semibold px-5 py-2 rounded-lg hover:brightness-110 transition-all">
+        Crear cuenta
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="pt-40 pb-28 px-6 text-center relative overflow-hidden">
+  <!-- Background glow -->
+  <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+    <div class="w-[600px] h-[600px] rounded-full bg-brand/5 blur-3xl"></div>
+  </div>
+
+  <!-- Eye SVG large -->
+  <div class="relative flex justify-center mb-8">
+    <div class="glow rounded-full p-1">
+      <svg width="88" height="88" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="32" cy="32" r="28" fill="#131313" stroke="#00e475" stroke-width="2.5"/>
+        <ellipse cx="32" cy="32" rx="17" ry="8.5" fill="#00e47510" stroke="#00e475" stroke-width="2"/>
+        <circle cx="32" cy="32" r="7" fill="#00e475"/>
+        <circle cx="29" cy="29" r="2.5" fill="white" opacity=".75"/>
+      </svg>
+    </div>
+  </div>
+
+  <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-none">
+    Tu PC,<br>
+    <span class="text-brand">siempre bajo control.</span>
+  </h1>
+  <p class="text-lg md:text-xl text-white/50 max-w-xl mx-auto mb-10 leading-relaxed">
+    Vigil monitorea eventos, hardware y crashes de tu PC con Windows en tiempo real —
+    con diagnóstico por IA y alertas en Telegram.
+  </p>
+  <div class="flex flex-col sm:flex-row gap-4 justify-center">
+    <a href="__BASE__/register"
+       class="bg-brand text-[#003918] font-bold text-lg px-10 py-4 rounded-xl hover:brightness-110 transition-all shadow-lg shadow-brand/20">
+      Crear cuenta gratis
+    </a>
+    <a href="#how"
+       class="bg-white/5 border border-white/10 text-white font-medium text-lg px-10 py-4 rounded-xl hover:bg-white/10 transition-all">
+      Ver cómo funciona
+    </a>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features" class="py-24 px-6">
+  <div class="max-w-6xl mx-auto">
+    <h2 class="text-3xl md:text-4xl font-bold text-center mb-4">Todo lo que necesitas ver</h2>
+    <p class="text-white/40 text-center mb-16 text-lg">Sin agentes pesados. Sin configuración compleja.</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+
+      <div class="card-hover bg-card border border-white/5 rounded-2xl p-7">
+        <div class="w-12 h-12 rounded-xl bg-brand/10 flex items-center justify-center mb-5">
+          <span class="material-symbols-outlined text-brand text-2xl">event_note</span>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Eventos del sistema</h3>
+        <p class="text-white/45 text-sm leading-relaxed">
+          Captura errores críticos, advertencias y eventos de seguridad del Event Log de Windows
+          en tiempo real, clasificados en 14 categorías.
+        </p>
+      </div>
+
+      <div class="card-hover bg-card border border-white/5 rounded-2xl p-7">
+        <div class="w-12 h-12 rounded-xl bg-brand/10 flex items-center justify-center mb-5">
+          <span class="material-symbols-outlined text-brand text-2xl">memory</span>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Hardware en tiempo real</h3>
+        <p class="text-white/45 text-sm leading-relaxed">
+          CPU, RAM, disco y red monitoreados cada minuto. Histórico de snapshots para
+          detectar tendencias y cuellos de botella.
+        </p>
+      </div>
+
+      <div class="card-hover bg-card border border-white/5 rounded-2xl p-7">
+        <div class="w-12 h-12 rounded-xl bg-brand/10 flex items-center justify-center mb-5">
+          <span class="material-symbols-outlined text-brand text-2xl">warning</span>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Detección de BSODs</h3>
+        <p class="text-white/45 text-sm leading-relaxed">
+          Detecta pantallas azules con su stop code exacto (0x1E, 0x7E…) usando los eventos
+          BugCheck y Kernel-Power del Event Log.
+        </p>
+      </div>
+
+      <div class="card-hover bg-card border border-white/5 rounded-2xl p-7">
+        <div class="w-12 h-12 rounded-xl bg-brand/10 flex items-center justify-center mb-5">
+          <span class="material-symbols-outlined text-brand text-2xl">psychology</span>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Diagnóstico con IA</h3>
+        <p class="text-white/45 text-sm leading-relaxed">
+          Claude analiza crashes de servicios y errores críticos y explica qué pasó
+          y cómo resolverlo — en lenguaje claro, no en código hexadecimal.
+        </p>
+      </div>
+
+      <div class="card-hover bg-card border border-white/5 rounded-2xl p-7">
+        <div class="w-12 h-12 rounded-xl bg-brand/10 flex items-center justify-center mb-5">
+          <span class="material-symbols-outlined text-brand text-2xl">notifications</span>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Alertas en Telegram</h3>
+        <p class="text-white/45 text-sm leading-relaxed">
+          Recibe notificaciones instantáneas en tu teléfono cuando tu PC tiene un evento
+          crítico — sin abrir el dashboard.
+        </p>
+      </div>
+
+      <div class="card-hover bg-card border border-white/5 rounded-2xl p-7">
+        <div class="w-12 h-12 rounded-xl bg-brand/10 flex items-center justify-center mb-5">
+          <span class="material-symbols-outlined text-brand text-2xl">group</span>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Multi-usuario</h3>
+        <p class="text-white/45 text-sm leading-relaxed">
+          Cada cuenta tiene sus propios datos aislados. Monitorea varias PCs desde un
+          solo dashboard o gestiona equipos de trabajo.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" class="py-24 px-6 bg-surface">
+  <div class="max-w-5xl mx-auto">
+    <h2 class="text-3xl md:text-4xl font-bold text-center mb-4">Listo en 3 pasos</h2>
+    <p class="text-white/40 text-center mb-20 text-lg">Sin servidores propios. Sin configuración de red.</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-10 relative">
+
+      <div class="relative flex flex-col items-center text-center step-line">
+        <div class="w-16 h-16 rounded-2xl bg-brand/10 border border-brand/30 flex items-center justify-center mb-6 text-brand font-bold text-2xl glow">
+          1
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Crear cuenta</h3>
+        <p class="text-white/45 text-sm leading-relaxed">
+          Regístrate y obtén tu clave secreta única en segundos.
+          Sin correo de confirmación, sin tarjeta.
+        </p>
+      </div>
+
+      <div class="relative flex flex-col items-center text-center step-line">
+        <div class="w-16 h-16 rounded-2xl bg-brand/10 border border-brand/30 flex items-center justify-center mb-6 text-brand font-bold text-2xl">
+          2
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Instalar el cliente</h3>
+        <p class="text-white/45 text-sm leading-relaxed">
+          Descarga Vigil.exe, ejecútalo e ingresa tu clave.
+          Se instala solo en el inicio de Windows.
+        </p>
+      </div>
+
+      <div class="flex flex-col items-center text-center">
+        <div class="w-16 h-16 rounded-2xl bg-brand/10 border border-brand/30 flex items-center justify-center mb-6 text-brand font-bold text-2xl">
+          3
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Ver el dashboard</h3>
+        <p class="text-white/45 text-sm leading-relaxed">
+          Accede al dashboard desde cualquier dispositivo y
+          mantente al tanto de todo lo que pasa en tu PC.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- STATS / TRUST BAR -->
+<section class="py-16 px-6 border-y border-white/5">
+  <div class="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+    <div>
+      <div class="text-3xl font-bold text-brand mb-1">14</div>
+      <div class="text-white/40 text-sm">categorías de eventos</div>
+    </div>
+    <div>
+      <div class="text-3xl font-bold text-brand mb-1">60s</div>
+      <div class="text-white/40 text-sm">intervalo de reporte</div>
+    </div>
+    <div>
+      <div class="text-3xl font-bold text-brand mb-1">0</div>
+      <div class="text-white/40 text-sm">configuración requerida</div>
+    </div>
+    <div>
+      <div class="text-3xl font-bold text-brand mb-1">100%</div>
+      <div class="text-white/40 text-sm">gratis</div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA FINAL -->
+<section class="py-28 px-6 text-center relative overflow-hidden">
+  <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+    <div class="w-[500px] h-[300px] rounded-full bg-brand/5 blur-3xl"></div>
+  </div>
+  <h2 class="text-4xl md:text-5xl font-bold mb-6 relative">
+    Empieza a ver lo que<br>
+    <span class="text-brand">tu PC realmente hace.</span>
+  </h2>
+  <p class="text-white/45 mb-10 text-lg max-w-md mx-auto relative">
+    Gratis. Sin instalación de servidor. Listo en menos de 2 minutos.
+  </p>
+  <a href="__BASE__/register"
+     class="relative bg-brand text-[#003918] font-bold text-xl px-14 py-5 rounded-2xl hover:brightness-110 transition-all shadow-xl shadow-brand/25 inline-block">
+    Crear cuenta gratis
+  </a>
+</section>
+
+<!-- FOOTER -->
+<footer class="py-10 px-6 border-t border-white/5 text-center text-white/25 text-sm">
+  <div class="flex items-center justify-center gap-2 mb-3">
+    <svg width="20" height="20" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="32" cy="32" r="28" fill="#131313" stroke="#00e475" stroke-width="3"/>
+      <ellipse cx="32" cy="32" rx="17" ry="8.5" fill="#00e47508" stroke="#00e475" stroke-width="2"/>
+      <circle cx="32" cy="32" r="6" fill="#00e475"/>
+    </svg>
+    <span class="text-white/50 font-medium">Vigil</span>
+  </div>
+  <p>Monitor de sistema para Windows &middot; Hecho con Python + FastAPI + IA</p>
+</footer>
+
+</body>
+</html>"""
+
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 def dashboard(secret: str = Query(...)):
