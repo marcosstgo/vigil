@@ -1585,7 +1585,7 @@ def get_version():
 @app.get("/vigil", response_class=HTMLResponse)
 @app.get("/vigil/", response_class=HTMLResponse)
 def landing():
-    return LANDING_HTML.replace("__BASE__", BASE_PATH)
+    return LANDING_HTML.replace("__BASE__", BASE_PATH).replace("__DOWNLOAD__", CLIENT_DOWNLOAD_URL).replace("__VERSION__", CLIENT_VERSION)
 
 LANDING_HTML = r"""<!DOCTYPE html>
 <html lang="es">
@@ -1684,9 +1684,13 @@ tailwind.config = {
        class="bg-brand text-[#003918] font-bold text-lg px-10 py-4 rounded-xl hover:brightness-110 transition-all shadow-lg shadow-brand/20">
       Crear cuenta gratis
     </a>
-    <a href="#how"
-       class="bg-white/5 border border-white/10 text-white font-medium text-lg px-10 py-4 rounded-xl hover:bg-white/10 transition-all">
-      Ver cómo funciona
+    <a href="__DOWNLOAD__" download
+       class="flex items-center gap-2 justify-center bg-white/5 border border-white/10 text-white font-medium text-lg px-10 py-4 rounded-xl hover:bg-white/10 transition-all">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Descargar Vigil.exe
+      <span class="text-white/30 text-sm font-normal">v__VERSION__</span>
     </a>
   </div>
 </section>
@@ -1794,8 +1798,8 @@ tailwind.config = {
         </div>
         <h3 class="text-lg font-semibold mb-2">Instalar el cliente</h3>
         <p class="text-white/45 text-sm leading-relaxed">
-          Descarga Vigil.exe, ejecútalo e ingresa tu clave.
-          Se instala solo en el inicio de Windows.
+          <a href="__DOWNLOAD__" download class="text-brand hover:underline">Descarga Vigil.exe</a>,
+          ejecútalo e ingresa tu clave. Se instala solo en el inicio de Windows.
         </p>
       </div>
 
@@ -1848,10 +1852,19 @@ tailwind.config = {
   <p class="text-white/45 mb-10 text-lg max-w-md mx-auto relative">
     Gratis. Sin instalación de servidor. Listo en menos de 2 minutos.
   </p>
-  <a href="__BASE__/register"
-     class="relative bg-brand text-[#003918] font-bold text-xl px-14 py-5 rounded-2xl hover:brightness-110 transition-all shadow-xl shadow-brand/25 inline-block">
-    Crear cuenta gratis
-  </a>
+  <div class="flex flex-col sm:flex-row gap-4 justify-center relative">
+    <a href="__BASE__/register"
+       class="bg-brand text-[#003918] font-bold text-xl px-14 py-5 rounded-2xl hover:brightness-110 transition-all shadow-xl shadow-brand/25 inline-block">
+      Crear cuenta gratis
+    </a>
+    <a href="__DOWNLOAD__" download
+       class="flex items-center gap-2 justify-center bg-white/5 border border-white/10 text-white font-semibold text-xl px-10 py-5 rounded-2xl hover:bg-white/10 transition-all">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Descargar .exe
+    </a>
+  </div>
 </section>
 
 <!-- FOOTER -->
