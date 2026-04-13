@@ -26,6 +26,9 @@ $results = @()
 
 $targets = @(
     @{ Log = 'System';      MaxEvents = 300; MaxLevel = 3; FilterIds = $null },
+    # BugCheck (1001) es Level=Information(4) — queda fuera del filtro normal (MaxLevel=3)
+    # Se captura explicitamente para obtener el stop code exacto del BSOD (ej: 0x1E, 0x7E, etc.)
+    @{ Log = 'System';      MaxEvents = 10;  MaxLevel = 5; FilterIds = @(1001) },
     @{ Log = 'Application'; MaxEvents = 200; MaxLevel = 2; FilterIds = $null },
     # Logs operacionales — capturan el detalle del "por que" crasheo un servicio
     @{ Log = 'Microsoft-Windows-Windows Defender/Operational';
