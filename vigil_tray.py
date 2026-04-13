@@ -392,8 +392,11 @@ def build_menu(cfg, icon_ref):
             msg = f"OK — último envío {last.strftime('%H:%M:%S')}\nEventos enviados: {_status['events']}"
         else:
             msg = "Iniciando..."
-        # Usar MessageBoxW nativo — funciona desde cualquier thread sin tkinter
-        ctypes.windll.user32.MessageBoxW(0, msg, "Vigil — Estado", 0x40)
+        # Correr en thread propio para no bloquear el loop de mensajes de pystray
+        threading.Thread(
+            target=lambda: ctypes.windll.user32.MessageBoxW(0, msg, "Vigil — Estado", 0x40),
+            daemon=True
+        ).start()
 
     def quit_app():
         _stop_event.set()
