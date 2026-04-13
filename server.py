@@ -1,4 +1,5 @@
-import os, sqlite3, threading
+import os, sqlite3, threading, time
+import urllib.request, urllib.parse
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse
@@ -8,10 +9,15 @@ import anthropic
 
 app = FastAPI()
 
-API_SECRET    = os.environ.get("API_SECRET", "changeme")
-CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
-DB_PATH       = os.environ.get("DB_PATH", "/home/corillo-adm/win-monitor/monitor.db")
-BASE_PATH     = "/win-monitor"
+API_SECRET       = os.environ.get("API_SECRET", "changeme")
+CLAUDE_API_KEY   = os.environ.get("CLAUDE_API_KEY", "")
+DB_PATH          = os.environ.get("DB_PATH", "/home/corillo-adm/win-monitor/monitor.db")
+BASE_PATH        = "/win-monitor"
+TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+# Cooldowns para no spamear Telegram (key → epoch del último envío)
+_tg_sent: dict = {}
 
 # ── Event ID sets por categoría
 BSOD_IDS    = {41, 1001, 6008}
@@ -477,6 +483,98 @@ class EventBatch(BaseModel):
     events: List[WinEvent]
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
+# ── Telegram ─────────────────────────────────────────────────────────────────
+def send_telegram(text: str, key: str = "", cooldown: int = 300):
+    """Envía mensaje a Telegram. key+cooldown evitan spam del mismo evento."""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    if key:
+        now = time.time()
+        if now - _tg_sent.get(key, 0) < cooldown:
+            return
+        _tg_sent[key] = now
+    try:
+        url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = urllib.parse.urlencode({
+            "chat_id":    TELEGRAM_CHAT_ID,
+            "text":       text,
+            "parse_mode": "HTML"
+        }).encode()
+        urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=10)
+    except Exception:
+        pass
+
+def notify_event(event: dict, category: str, hostname: str = ""):
+    """Decide si un evento merece notificación y la envía."""
+    eid   = event.get("event_id", 0)
+    level = event.get("level", 9)
+    prov  = event.get("provider", "")
+    msg   = (event.get("message", "") or "")[:200]
+    t     = (event.get("time_created", "") or "")[:16].replace("T", " ")
+    host  = hostname or "MSI Trident X2"
+
+    # BSOD — prioridad máxima, cooldown 10 min
+    if eid in BSOD_IDS:
+        text = (
+            f"🔴 <b>VIGIL — BSOD</b>\n"
+            f"<b>{host}</b>\n\n"
+            f"Event {eid} · {prov}\n"
+            f"<code>{t}</code>\n\n"
+            f"{msg}\n\n"
+            f"→ Revisa <code>C:\\Windows\\Minidump</code>"
+        )
+        send_telegram(text, key=f"bsod-{t}", cooldown=600)
+        return
+
+    # Crítico nivel 1
+    if level == 1:
+        icon = "🔴" if category in ("DISCO","GPU","DRIVER") else "⚠️"
+        text = (
+            f"{icon} <b>VIGIL — Crítico [{category}]</b>\n"
+            f"<b>{host}</b>\n\n"
+            f"{prov} · ID {eid}\n"
+            f"<code>{t}</code>\n\n"
+            f"{msg}"
+        )
+        send_telegram(text, key=f"crit-{eid}-{t}", cooldown=300)
+        return
+
+    # Error de disco nivel 2
+    if level == 2 and category == "DISCO":
+        text = (
+            f"💾 <b>VIGIL — Error de Disco [{category}]</b>\n"
+            f"<b>{host}</b>\n\n"
+            f"{prov} · ID {eid}\n"
+            f"<code>{t}</code>\n\n"
+            f"{msg}"
+        )
+        send_telegram(text, key=f"disk-{eid}-{t}", cooldown=600)
+        return
+
+    # GPU error nivel 2
+    if level == 2 and category == "GPU":
+        text = (
+            f"🎮 <b>VIGIL — Error de GPU</b>\n"
+            f"<b>{host}</b>\n\n"
+            f"{prov} · ID {eid}\n"
+            f"<code>{t}</code>\n\n"
+            f"{msg}"
+        )
+        send_telegram(text, key=f"gpu-{eid}-{t}", cooldown=600)
+
+def notify_crash_loop(svc_name: str, count: int, action: str, hostname: str = "", ai: bool = False):
+    """Notifica cuando un servicio entra en crash loop."""
+    host  = hostname or "MSI Trident X2"
+    label = "🤖 IA" if ai else "→"
+    text  = (
+        f"🔁 <b>VIGIL — Crash Loop</b>\n"
+        f"<b>{host}</b>\n\n"
+        f"<b>{svc_name}</b> se detuvo <b>{count}x</b> en 6h\n\n"
+        f"{label} {action[:300]}"
+    )
+    send_telegram(text, key=f"loop-{svc_name.lower()}", cooldown=1800)
+
+# ── Auth ─────────────────────────────────────────────────────────────────────
 def auth(secret: str):
     if secret != API_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -522,6 +620,14 @@ def receive_events(batch: EventBatch, bg: BackgroundTasks):
         # Correlación de incidente para BSODs
         if e.event_id in BSOD_IDS:
             bg.add_task(auto_incident, cur.lastrowid)
+        # Notificaciones Telegram
+        if e.level <= 2 or e.event_id in BSOD_IDS:
+            host = batch.metrics.hostname if batch.metrics else ""
+            bg.add_task(notify_event, {
+                "event_id": e.event_id, "level": e.level,
+                "provider": e.provider, "message": e.message,
+                "time_created": e.time_created
+            }, cat, host)
 
     conn.commit()
     conn.close()
@@ -683,6 +789,13 @@ def get_issues(secret: str = Query(...)):
                 args=(svc_name, svc_cat, row["cnt"], crash_evts, detail_evts),
                 daemon=True
             ).start()
+
+        # Notificación Telegram para crash loops
+        threading.Thread(
+            target=notify_crash_loop,
+            args=(svc_name, row["cnt"], action, "", has_ai),
+            daemon=True
+        ).start()
 
         issues.append({
             "severity":  severity,
