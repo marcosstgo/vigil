@@ -276,7 +276,13 @@ Responde en español con este formato exacto:
 
 
 def auto_incident(bsod_db_id: int):
-    """Cuando llega un BSOD, crea el incidente y analiza la cadena."""
+    """Cuando llega un BSOD, crea el incidente y analiza la cadena.
+
+    Un crash genera múltiples eventos (ej: 41 al caer + 1001/BugCheck al reiniciar).
+    Se evita crear incidentes duplicados buscando uno existente en ventana ±15 min.
+    El evento 1001 (BugCheck) contiene el stop code exacto — si llega después del 41,
+    se usa su mensaje para el análisis en lugar del 41 si el incidente aún no tiene análisis.
+    """
     conn = get_db()
     existing = conn.execute(
         "SELECT id, analysis FROM incidents WHERE bsod_event_id=?", (bsod_db_id,)
@@ -301,6 +307,28 @@ def auto_incident(bsod_db_id: int):
         if not existing["analysis"]:
             conn.close()
             run_incident_analysis(inc_id, bsod, chain)
+        else:
+            conn.close()
+        return
+
+    # Buscar incidente cercano del mismo crash (ventana ±15 min) para evitar duplicados.
+    # Ocurre cuando event 41 (Critical, al caer) y event 1001/BugCheck (Information, al reiniciar)
+    # llegan en el mismo batch — ambos disparan auto_incident pero son la misma caída.
+    nearby = conn.execute("""
+        SELECT i.id, i.analysis, e2.event_id as trigger_eid
+        FROM incidents i
+        JOIN events e2 ON e2.id = i.bsod_event_id
+        WHERE e2.time_created BETWEEN datetime(?, '-15 minutes')
+                                  AND datetime(?, '+15 minutes')
+        ORDER BY i.id DESC LIMIT 1
+    """, (bsod["time_created"], bsod["time_created"])).fetchone()
+
+    if nearby:
+        # Ya existe un incidente de esta caída. Si el evento actual es 1001 (BugCheck,
+        # contiene stop code) y el incidente no tiene análisis aún, generarlo con este contexto.
+        if not nearby["analysis"] and bsod["event_id"] == 1001:
+            conn.close()
+            run_incident_analysis(nearby["id"], bsod, chain)
         else:
             conn.close()
         return
@@ -614,8 +642,9 @@ def receive_events(batch: EventBatch, bg: BackgroundTasks):
               batch.metrics.username if batch.metrics else None))
         count += 1
         # Auto-analizar BSODs y disk errors críticos
+        # BSOD IDs (ej: 1001/BugCheck) pueden ser level=4 (Information) — se incluyen explícitamente
         AUTO_ANALYZE_CATS = {"BSOD","DISCO","GPU","DRIVER","RED","ENERGIA","ANTIVIRUS","BROWSER","SERVICIO"}
-        if e.level <= 2 and (cat in AUTO_ANALYZE_CATS or e.event_id in BSOD_IDS):
+        if e.event_id in BSOD_IDS or (e.level <= 2 and cat in AUTO_ANALYZE_CATS):
             auto_ids.append(cur.lastrowid)
         # Correlación de incidente para BSODs
         if e.event_id in BSOD_IDS:
