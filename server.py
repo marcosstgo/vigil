@@ -3,7 +3,7 @@ import urllib.request, urllib.parse
 from collections import defaultdict
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import anthropic
@@ -1919,6 +1919,11 @@ def get_version():
 def landing():
     return LANDING_HTML.replace("__BASE__", BASE_PATH).replace("__REGISTER__", "/vigil/register").replace("__DOWNLOAD__", CLIENT_DOWNLOAD_URL).replace("__VERSION__", CLIENT_VERSION)
 
+@app.get("/vigil/screenshot.jpg")
+def screenshot():
+    path = Path(__file__).parent / "screenshot.jpg"
+    return FileResponse(path, media_type="image/jpeg")
+
 @app.get("/vigil/privacy", response_class=HTMLResponse)
 def privacy():
     return PRIVACY_HTML
@@ -2057,7 +2062,7 @@ tailwind.config = {
 <section class="pt-40 pb-28 px-6 text-center relative overflow-hidden">
   <!-- Screenshot background -->
   <div class="absolute inset-0 pointer-events-none" style="
-    background-image: url('https://raw.githubusercontent.com/marcosstgo/vigil/master/screenshot.jpg');
+    background-image: url('/vigil/screenshot.jpg');
     background-size: cover;
     background-position: center top;
     filter: blur(12px) brightness(0.18) saturate(0.6);
