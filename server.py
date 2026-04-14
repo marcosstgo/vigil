@@ -2584,16 +2584,19 @@ body.demo-mode #main-content { padding-top: 36px; }
 
 /* ── Mobile ── */
 @media (max-width: 767px) {
-  aside { transform: translateX(-100%); transition: transform .25s ease; }
-  aside.open { transform: translateX(0); }
-  main  { margin-left: 0 !important; }
-  #mob-header { display: flex !important; }
-  #mob-overlay { display: block; }
-  #mob-overlay.hidden { display: none !important; }
+  aside { display: none !important; }
+  #main-content { display: none !important; }
+  #mob-header { display: none !important; }
+  #mob-overlay { display: none !important; }
+  #demo-banner { display: none !important; }
+  #mob-view { display: block !important; }
+  #mob-bottom-nav { display: flex !important; }
 }
 @media (min-width: 768px) {
   #mob-header { display: none !important; }
   #mob-overlay { display: none !important; }
+  #mob-view { display: none !important; }
+  #mob-bottom-nav { display: none !important; }
 }
 </style>
 </head>
@@ -3073,6 +3076,251 @@ body.demo-mode #main-content { padding-top: 36px; }
   </div><!-- /canvas -->
 </main>
 
+<!-- ═══ MOBILE VIEW ═══ -->
+<div id="mob-view" style="display:none;min-height:100dvh;background:#131313">
+
+  <!-- Mobile header -->
+  <header style="position:fixed;top:0;left:0;right:0;z-index:50;height:64px;
+    background:rgba(19,19,19,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    border-bottom:1px solid rgba(69,71,75,.15);display:flex;align-items:center;
+    justify-content:space-between;padding:0 20px">
+    <div class="flex items-center gap-2">
+      <svg width="22" height="22" viewBox="0 0 64 64" fill="none">
+        <circle cx="32" cy="32" r="28" fill="#131313" stroke="#00e475" stroke-width="2.5"/>
+        <ellipse cx="32" cy="32" rx="17" ry="8.5" fill="#00e47510" stroke="#00e475" stroke-width="2"/>
+        <circle cx="32" cy="32" r="7" fill="#00e475"/>
+        <circle cx="29" cy="29" r="2.5" fill="white" opacity=".75"/>
+      </svg>
+      <h1 class="text-xl font-black tracking-tighter font-headline" style="color:#00e475">VIGIL</h1>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-1.5">
+        <div class="w-1.5 h-1.5 rounded-full bg-primary live-pulse" id="mob-dot-live"></div>
+        <span class="text-[10px] font-mono uppercase" style="color:rgba(198,198,203,.35)" id="mob-machine">LIVE</span>
+      </div>
+      <button onclick="load()" style="background:none;border:none;cursor:pointer;
+        color:rgba(198,198,203,.4);padding:6px;line-height:0">
+        <span class="material-symbols-outlined" style="font-size:20px">refresh</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Dashboard tab ── -->
+  <div id="mob-tab-dashboard" class="mob-panel" style="padding:80px 16px 112px;max-width:480px;margin:0 auto">
+    <div class="space-y-5">
+
+      <!-- Demo banner -->
+      <div id="mob-demo-banner" style="display:none;background:linear-gradient(90deg,#fabd00,#f59e0b);
+        color:#1a1000;border-radius:12px;padding:12px 16px;text-align:center;
+        font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif">
+        MODO DEMO — solo lectura &nbsp;·&nbsp;
+        <a href="/vigil/register" style="text-decoration:underline;color:#1a1000">Crear cuenta →</a>
+      </div>
+
+      <!-- Critical Alerts -->
+      <section class="space-y-3">
+        <h2 class="text-xs uppercase tracking-[.2em] font-headline ml-1" style="color:rgba(198,198,203,.45)">Critical Alerts</h2>
+        <div id="mob-alerts-ok" class="rounded-xl p-5 flex items-center gap-3 relative overflow-hidden"
+             style="background:#1c1b1b;border-left:2px solid #00e475">
+          <span class="material-symbols-outlined text-primary" style="font-variation-settings:'FILL' 1">check_circle</span>
+          <span class="text-sm font-body" style="color:rgba(198,198,203,.6)">Sin problemas activos detectados</span>
+        </div>
+        <div id="mob-alerts-list" class="space-y-3" style="display:none"></div>
+      </section>
+
+      <!-- Hardware Vitality -->
+      <section class="space-y-3">
+        <h2 class="text-xs uppercase tracking-[.2em] font-headline ml-1" style="color:rgba(198,198,203,.45)">Hardware Vitality</h2>
+        <div class="rounded-xl p-6 space-y-7 relative overflow-hidden" style="background:#1c1b1b">
+          <div style="position:absolute;inset:0;background:radial-gradient(circle at 0% 0%,rgba(0,228,117,.07) 0%,transparent 55%);pointer-events:none"></div>
+          <!-- CPU -->
+          <div class="space-y-2">
+            <div class="flex justify-between items-end">
+              <div>
+                <p class="text-[10px] font-mono uppercase tracking-widest" style="color:rgba(198,198,203,.4)">CPU Utilization</p>
+                <p class="text-3xl font-headline font-bold" style="color:#00e475">
+                  <span id="mob-cpu-val">—</span><span class="text-sm font-light ml-1" style="color:rgba(198,198,203,.4)">%</span></p>
+              </div>
+              <div class="text-right">
+                <p class="text-[10px] font-mono uppercase tracking-widest" style="color:rgba(198,198,203,.4)">Temp</p>
+                <p class="text-sm font-mono text-on-surface" id="mob-cpu-temp">—</p>
+              </div>
+            </div>
+            <div class="h-1.5 w-full rounded-full overflow-hidden" style="background:#353534">
+              <div id="mob-cpu-bar" class="h-full rounded-full transition-all duration-500"
+                   style="width:0%;background:#00e475;box-shadow:0 0 8px rgba(0,228,117,.4)"></div>
+            </div>
+          </div>
+          <!-- RAM -->
+          <div class="space-y-2">
+            <div class="flex justify-between items-end">
+              <div>
+                <p class="text-[10px] font-mono uppercase tracking-widest" style="color:rgba(198,198,203,.4)">Memory Load</p>
+                <p class="text-3xl font-headline font-bold" style="color:#00e475">
+                  <span id="mob-ram-val">—</span><span class="text-sm font-light ml-1" style="color:rgba(198,198,203,.4)">GB</span></p>
+              </div>
+              <div class="text-right">
+                <p class="text-[10px] font-mono uppercase tracking-widest" style="color:rgba(198,198,203,.4)">Available</p>
+                <p class="text-sm font-mono text-on-surface" id="mob-ram-free">—</p>
+              </div>
+            </div>
+            <div class="h-1.5 w-full rounded-full overflow-hidden" style="background:#353534">
+              <div id="mob-ram-bar" class="h-full rounded-full transition-all duration-500"
+                   style="width:0%;background:#fabd00;box-shadow:0 0 8px rgba(250,189,0,.4)"></div>
+            </div>
+          </div>
+          <!-- GPU -->
+          <div class="space-y-2" id="mob-gpu-row">
+            <div class="flex justify-between items-end">
+              <div>
+                <p class="text-[10px] font-mono uppercase tracking-widest" style="color:rgba(198,198,203,.4)">GPU Compute</p>
+                <p class="text-3xl font-headline font-bold" style="color:#fabd00">
+                  <span id="mob-gpu-val">—</span><span class="text-sm font-light ml-1" style="color:rgba(198,198,203,.4)">%</span></p>
+              </div>
+              <div class="text-right">
+                <p class="text-[10px] font-mono uppercase tracking-widest" style="color:rgba(198,198,203,.4)">VRAM</p>
+                <p class="text-sm font-mono text-on-surface" id="mob-gpu-vram">—</p>
+              </div>
+            </div>
+            <div class="h-1.5 w-full rounded-full overflow-hidden" style="background:#353534">
+              <div id="mob-gpu-bar" class="h-full rounded-full transition-all duration-500"
+                   style="width:0%;background:#fabd00;box-shadow:0 0 8px rgba(250,189,0,.4)"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick stats grid -->
+      <section class="grid grid-cols-2 gap-3">
+        <div class="rounded-xl p-4 text-center" style="background:#1c1b1b">
+          <p class="text-[10px] font-mono uppercase tracking-widest mb-1" style="color:rgba(198,198,203,.4)">BSODs</p>
+          <p class="text-2xl font-headline font-bold" style="color:#c084fc" id="mob-s-bsod">—</p>
+        </div>
+        <div class="rounded-xl p-4 text-center" style="background:#1c1b1b">
+          <p class="text-[10px] font-mono uppercase tracking-widest mb-1" style="color:rgba(198,198,203,.4)">Críticos</p>
+          <p class="text-2xl font-headline font-bold" style="color:#ffb4ab" id="mob-s-crit">—</p>
+        </div>
+        <div class="rounded-xl p-4 text-center" style="background:#1c1b1b">
+          <p class="text-[10px] font-mono uppercase tracking-widest mb-1" style="color:rgba(198,198,203,.4)">Errores</p>
+          <p class="text-2xl font-headline font-bold" style="color:#fb923c" id="mob-s-err">—</p>
+        </div>
+        <div class="rounded-xl p-4 text-center" style="background:#1c1b1b">
+          <p class="text-[10px] font-mono uppercase tracking-widest mb-1" style="color:rgba(198,198,203,.4)">Warnings</p>
+          <p class="text-2xl font-headline font-bold" style="color:#fabd00" id="mob-s-warn">—</p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ── Logs tab ── -->
+  <div id="mob-tab-logs" class="mob-panel" style="display:none;padding:80px 16px 112px;max-width:480px;margin:0 auto">
+    <div class="space-y-4">
+      <div class="flex justify-between items-center">
+        <h2 class="text-xs uppercase tracking-[.2em] font-headline" style="color:rgba(198,198,203,.45)">System Events</h2>
+        <span class="text-[10px] font-mono" style="color:#00e475" id="mob-ev-count"></span>
+      </div>
+      <div id="mob-events-list" class="overflow-hidden rounded-xl"></div>
+    </div>
+  </div>
+
+  <!-- ── Hardware tab ── -->
+  <div id="mob-tab-hardware" class="mob-panel" style="display:none;padding:80px 16px 112px;max-width:480px;margin:0 auto">
+    <div class="space-y-4">
+      <h2 class="text-xs uppercase tracking-[.2em] font-headline" style="color:rgba(198,198,203,.45)">Hardware Detail</h2>
+      <div class="rounded-xl p-5" style="background:#1c1b1b">
+        <p class="text-[10px] font-mono uppercase tracking-widest mb-4" style="color:rgba(198,198,203,.4)">Disk I/O</p>
+        <div id="mob-diskio"><span class="text-xs" style="color:rgba(198,198,203,.3)">Sin datos</span></div>
+      </div>
+      <div class="rounded-xl p-5" style="background:#1c1b1b">
+        <p class="text-[10px] font-mono uppercase tracking-widest mb-4" style="color:rgba(198,198,203,.4)">S.M.A.R.T.</p>
+        <div id="mob-smart"><span class="text-xs" style="color:rgba(198,198,203,.3)">Sin datos</span></div>
+      </div>
+      <div class="rounded-xl p-5" style="background:#1c1b1b">
+        <p class="text-[10px] font-mono uppercase tracking-widest mb-4" style="color:rgba(198,198,203,.4)">Almacenamiento</p>
+        <div id="mob-disks"><span class="text-xs" style="color:rgba(198,198,203,.3)">Sin datos</span></div>
+      </div>
+      <div class="rounded-xl p-5 text-center" style="background:#1c1b1b">
+        <p class="text-[10px] font-mono uppercase tracking-widest mb-2" style="color:rgba(198,198,203,.4)">Uptime</p>
+        <p class="text-xl font-headline font-bold text-on-surface" id="mob-uptime">—</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Settings tab ── -->
+  <div id="mob-tab-settings" class="mob-panel" style="display:none;padding:80px 16px 112px;max-width:480px;margin:0 auto">
+    <div class="space-y-4">
+      <h2 class="text-xs uppercase tracking-[.2em] font-headline" style="color:rgba(198,198,203,.45)">Configuración</h2>
+      <div class="rounded-xl p-5 space-y-4" style="background:#1c1b1b;border:1px solid rgba(69,71,75,.25)">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-primary" style="font-size:18px">send</span>
+          <h3 class="font-headline font-semibold text-on-surface text-sm">Alertas Telegram</h3>
+        </div>
+        <div>
+          <label class="block text-[10px] font-mono uppercase tracking-widest mb-2" style="color:rgba(198,198,203,.4)">Bot Token</label>
+          <input id="mob-tg-token" type="text" placeholder="123456789:AAF..."
+            class="w-full rounded-xl text-sm outline-none"
+            style="background:#131313;border:1.5px solid rgba(69,71,75,.4);color:#e5e2e1;padding:12px 16px;font-family:monospace"
+            onfocus="this.style.borderColor='#00e475'" onblur="this.style.borderColor='rgba(69,71,75,.4)'">
+        </div>
+        <div>
+          <label class="block text-[10px] font-mono uppercase tracking-widest mb-2" style="color:rgba(198,198,203,.4)">Chat ID</label>
+          <input id="mob-tg-chatid" type="text" placeholder="123456789"
+            class="w-full rounded-xl text-sm outline-none"
+            style="background:#131313;border:1.5px solid rgba(69,71,75,.4);color:#e5e2e1;padding:12px 16px;font-family:monospace"
+            onfocus="this.style.borderColor='#00e475'" onblur="this.style.borderColor='rgba(69,71,75,.4)'">
+        </div>
+        <div class="flex gap-3">
+          <button onclick="mobSaveTelegram()"
+            class="flex-1 text-sm font-headline font-bold rounded-xl py-3 cursor-pointer"
+            style="background:#00e475;color:#003918;border:none">Guardar</button>
+          <button onclick="mobTestTelegram()"
+            class="flex-1 text-sm font-headline font-semibold rounded-xl py-3 cursor-pointer"
+            style="background:transparent;border:1.5px solid rgba(69,71,75,.4);color:rgba(198,198,203,.7)">Probar</button>
+        </div>
+        <span id="mob-tg-status" class="text-xs block text-center" style="color:rgba(198,198,203,.4)"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Background decorations -->
+  <div style="position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none">
+    <div style="position:absolute;top:-10%;right:-10%;width:50%;height:40%;background:rgba(0,228,117,.04);filter:blur(120px);border-radius:50%"></div>
+    <div style="position:absolute;bottom:-10%;left:-10%;width:50%;height:40%;background:rgba(255,180,171,.04);filter:blur(120px);border-radius:50%"></div>
+  </div>
+</div>
+
+<!-- Mobile bottom nav -->
+<nav id="mob-bottom-nav" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:50;
+  background:rgba(19,19,19,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-top:1px solid rgba(69,71,75,.15)">
+  <div style="display:flex;justify-content:space-around;align-items:center;padding:10px 16px 24px">
+    <button onclick="switchMobTab('dashboard')" id="mob-nav-dashboard"
+      style="display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;border:none;
+        color:#00e475;background:rgba(0,228,117,.1);border-radius:12px;padding:6px 18px">
+      <span class="material-symbols-outlined" style="font-size:22px">dashboard</span>
+      <span style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;font-family:'Space Grotesk',sans-serif">Dashboard</span>
+    </button>
+    <button onclick="switchMobTab('logs')" id="mob-nav-logs"
+      style="display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;border:none;
+        color:rgba(198,198,203,.4);background:none;padding:6px 16px">
+      <span class="material-symbols-outlined" style="font-size:22px">terminal</span>
+      <span style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;font-family:'Space Grotesk',sans-serif">Logs</span>
+    </button>
+    <button onclick="switchMobTab('hardware')" id="mob-nav-hardware"
+      style="display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;border:none;
+        color:rgba(198,198,203,.4);background:none;padding:6px 16px">
+      <span class="material-symbols-outlined" style="font-size:22px">memory</span>
+      <span style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;font-family:'Space Grotesk',sans-serif">Hardware</span>
+    </button>
+    <button onclick="switchMobTab('settings')" id="mob-nav-settings"
+      style="display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;border:none;
+        color:rgba(198,198,203,.4);background:none;padding:6px 16px">
+      <span class="material-symbols-outlined" style="font-size:22px">settings</span>
+      <span style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;font-family:'Space Grotesk',sans-serif">Settings</span>
+    </button>
+  </div>
+</nav>
+
 <!-- MODAL -->
 <div class="modal" id="modal">
   <div class="bg-surface-container-low rounded-xl p-6 max-w-2xl w-11/12 max-h-[80vh] overflow-y-auto"
@@ -3103,6 +3351,124 @@ if (IS_DEMO) {
   document.body.classList.add("demo-mode");
   const cfg = document.getElementById("nav-config");
   if (cfg) cfg.style.display = "none";
+  const mdb = document.getElementById("mob-demo-banner");
+  if (mdb) mdb.style.display = "";
+  const mns = document.getElementById("mob-nav-settings");
+  if (mns) mns.style.display = "none";
+}
+
+/* ── Mobile tab switching ── */
+function switchMobTab(tab) {
+  ["dashboard","logs","hardware","settings"].forEach(t => {
+    const panel = document.getElementById("mob-tab-" + t);
+    const btn   = document.getElementById("mob-nav-" + t);
+    if (panel) panel.style.display = (t === tab) ? "" : "none";
+    if (btn) {
+      if (t === tab) {
+        btn.style.color      = "#00e475";
+        btn.style.background = "rgba(0,228,117,.1)";
+        btn.style.borderRadius = "12px";
+        btn.style.padding    = "6px 18px";
+      } else {
+        btn.style.color      = "rgba(198,198,203,.4)";
+        btn.style.background = "none";
+        btn.style.borderRadius = "";
+        btn.style.padding    = "6px 16px";
+      }
+    }
+  });
+}
+
+/* ── Mobile alert cards ── */
+function renderMobAlerts(issues) {
+  const okEl  = document.getElementById("mob-alerts-ok");
+  const lstEl = document.getElementById("mob-alerts-list");
+  if (!okEl) return;
+  if (!issues || !issues.length) {
+    okEl.style.display = ""; lstEl.style.display = "none"; return;
+  }
+  okEl.style.display = "none"; lstEl.style.display = "";
+  lstEl.innerHTML = issues.slice(0, 3).map(i => {
+    const border  = i.severity==="critical"?"#ffb4ab":i.severity==="high"?"#fb923c":i.severity==="medium"?"#fabd00":"#00e475";
+    const lightBg = i.severity==="critical"?"rgba(255,180,171,.07)":i.severity==="high"?"rgba(251,146,60,.07)":"rgba(250,189,0,.06)";
+    const icon    = i.severity==="critical"?"error":"warning";
+    const tag     = i.severity==="critical"?"System Fault":i.severity==="high"?"High Severity":i.severity==="medium"?"Warning":"Info";
+    return `<div class="rounded-xl p-5 relative overflow-hidden" style="background:#1c1b1b;border-left:2px solid ${border}">
+      <div style="position:absolute;inset:0;background:radial-gradient(circle at 0% 0%,${lightBg} 0%,transparent 55%);pointer-events:none"></div>
+      <div class="flex justify-between items-start mb-2">
+        <div class="space-y-0.5">
+          <p class="text-[10px] font-mono uppercase tracking-widest" style="color:${border}">${esc(tag)}</p>
+          <h3 class="font-headline text-base font-bold text-on-surface leading-tight">${esc(i.title)}</h3>
+        </div>
+        <span class="material-symbols-outlined flex-shrink-0" style="color:${border};font-variation-settings:'FILL' 1">${icon}</span>
+      </div>
+      <p class="text-xs font-body" style="color:rgba(198,198,203,.5);line-height:1.5">${esc(i.action)}</p>
+    </div>`;
+  }).join("");
+}
+
+/* ── Mobile events list ── */
+function renderMobEvents(events) {
+  const lst = document.getElementById("mob-events-list");
+  const cnt = document.getElementById("mob-ev-count");
+  if (!lst) return;
+  if (cnt) cnt.textContent = events.length ? events.length + " eventos" : "";
+  if (!events.length) {
+    lst.innerHTML = '<div class="p-5 text-center text-sm rounded-xl" style="background:#1c1b1b;color:rgba(198,198,203,.3)">Sin eventos</div>';
+    return;
+  }
+  lst.innerHTML = events.slice(0, 60).map(e => {
+    const icon      = e.level===1?"cancel":e.level===2?"report":"info";
+    const iconColor = e.level===1?"#ffb4ab":e.level===2?"#fb923c":"#00e475";
+    const badge     = e.level===1?"ERROR":e.level===2?"WARN":"INFO";
+    const badgeBg   = e.level===1?"rgba(147,0,10,.25)":e.level===2?"rgba(45,18,0,.5)":"rgba(0,228,117,.1)";
+    const badgeClr  = e.level===1?"#ffb4ab":e.level===2?"#fb923c":"#00e475";
+    return `<div style="background:#1c1b1b;border-bottom:1px solid rgba(69,71,75,.08);
+      padding:14px 16px;display:flex;gap:12px;align-items:center;cursor:pointer"
+      onclick="showMsg(${e.id},${JSON.stringify(e.message)})">
+      <span class="material-symbols-outlined flex-shrink-0" style="color:${iconColor};font-size:20px">${icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+          <span style="font-size:10px;font-family:monospace;color:rgba(198,198,203,.35)">${fmtTime(e.time_created)}</span>
+          <span style="font-size:9px;font-family:monospace;font-weight:700;padding:2px 6px;border-radius:4px;
+            background:${badgeBg};color:${badgeClr}">${badge}</span>
+        </div>
+        <p style="font-size:13px;color:#e5e2e1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+          font-family:'Inter',sans-serif">${esc((e.message||"").substring(0,80))}</p>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* ── Mobile Telegram ── */
+async function mobSaveTelegram() {
+  const token  = document.getElementById("mob-tg-token").value.trim();
+  const chatid = document.getElementById("mob-tg-chatid").value.trim();
+  document.getElementById("tg-token").value  = token;
+  document.getElementById("tg-chatid").value = chatid;
+  const status = document.getElementById("mob-tg-status");
+  status.textContent = "Guardando…"; status.style.color = "rgba(198,198,203,.4)";
+  try {
+    const r = await fetch(`${B}/api/settings?secret=${S}&telegram_token=${encodeURIComponent(token)}&telegram_chat_id=${encodeURIComponent(chatid)}`, { method: "POST" });
+    if (!r.ok) throw new Error();
+    status.textContent = "✓ Guardado"; status.style.color = "#00e475";
+  } catch(e) {
+    status.textContent = "Error al guardar"; status.style.color = "#ffb4ab";
+  }
+  setTimeout(() => { status.textContent = ""; }, 3000);
+}
+async function mobTestTelegram() {
+  const status = document.getElementById("mob-tg-status");
+  status.textContent = "Enviando…"; status.style.color = "rgba(198,198,203,.4)";
+  try {
+    const r = await fetch(`${B}/api/settings/test-telegram?secret=${S}`, { method: "POST" });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "Error");
+    status.textContent = "✓ Mensaje enviado"; status.style.color = "#00e475";
+  } catch(e) {
+    status.textContent = e.message || "Error al enviar"; status.style.color = "#ffb4ab";
+  }
+  setTimeout(() => { status.textContent = ""; }, 4000);
 }
 let arTimer = null, arOn = false;
 let expanded = new Set();
@@ -3271,6 +3637,82 @@ function renderHealth(s) {
   /* Uptime sidebar */
   const uh = Math.floor((s.uptime_minutes||0)/60), um = (s.uptime_minutes||0)%60;
   document.getElementById("status-text").textContent = `Uptime ${uh}h ${um}m`;
+
+  /* ── Mobile hardware ── */
+  const mobCpuVal = document.getElementById("mob-cpu-val");
+  if (!mobCpuVal) return;
+  mobCpuVal.textContent = cpu;
+  document.getElementById("mob-cpu-bar").style.width = cpu + "%";
+  document.getElementById("mob-cpu-temp").textContent = s.cpu_temp ? s.cpu_temp + "°C" : "—";
+  const usedGBm = ((s.mem_total_mb - s.mem_free_mb)/1024).toFixed(1);
+  document.getElementById("mob-ram-val").textContent  = usedGBm;
+  document.getElementById("mob-ram-bar").style.width  = mp + "%";
+  document.getElementById("mob-ram-free").textContent = (s.mem_free_mb/1024).toFixed(1) + "G";
+  document.getElementById("mob-machine").textContent  = (s.hostname || "LIVE").toUpperCase();
+  if (s.gpu_percent != null) {
+    const gp = s.gpu_percent;
+    document.getElementById("mob-gpu-val").textContent  = gp;
+    document.getElementById("mob-gpu-bar").style.width  = gp + "%";
+    const vramStr = s.gpu_vram_used_mb && s.gpu_vram_total_mb
+      ? `${(s.gpu_vram_used_mb/1024).toFixed(1)}/${(s.gpu_vram_total_mb/1024).toFixed(0)}G` : "—";
+    document.getElementById("mob-gpu-vram").textContent = vramStr;
+  } else {
+    const gr = document.getElementById("mob-gpu-row");
+    if (gr) gr.style.display = "none";
+  }
+  const mUp = document.getElementById("mob-uptime");
+  if (mUp) mUp.textContent = uh + "h " + um + "m";
+  /* Mobile Disk I/O */
+  if (s.disk_read_mbps != null || s.disk_write_mbps != null) {
+    const rd = s.disk_read_mbps??0, wr = s.disk_write_mbps??0, mx = Math.max(rd,wr,50);
+    const mDio = document.getElementById("mob-diskio");
+    if (mDio) mDio.innerHTML = `<div class="space-y-3">
+      <div><div class="flex justify-between text-xs font-mono mb-1.5">
+        <span style="color:rgba(198,198,203,.45)">Lectura</span><span style="color:#38bdf8;font-weight:700">${rd.toFixed(1)} MB/s</span></div>
+        <div style="height:6px;width:100%;background:#353534;border-radius:9999px;overflow:hidden">
+          <div style="width:${Math.min(rd/mx*100,100)}%;height:100%;background:#38bdf8;border-radius:9999px"></div></div></div>
+      <div><div class="flex justify-between text-xs font-mono mb-1.5">
+        <span style="color:rgba(198,198,203,.45)">Escritura</span><span style="color:#f472b6;font-weight:700">${wr.toFixed(1)} MB/s</span></div>
+        <div style="height:6px;width:100%;background:#353534;border-radius:9999px;overflow:hidden">
+          <div style="width:${Math.min(wr/mx*100,100)}%;height:100%;background:#f472b6;border-radius:9999px"></div></div></div>
+    </div>`;
+  }
+  /* Mobile S.M.A.R.T. */
+  if (s.smart_disks) {
+    let sh = "";
+    s.smart_disks.split(";").forEach(d => {
+      d = d.trim(); if (!d) return;
+      const p = d.split("|"); if (p.length < 3) return;
+      const nm = p[0].trim(), hl = p[2]?.trim()||"Unknown";
+      const hcl = hl==="Healthy"?"background:rgba(0,228,117,.1);color:#00e475":
+                  hl==="Warning"?"background:rgba(250,189,0,.1);color:#fabd00":
+                  hl==="Unhealthy"?"background:rgba(147,0,10,.2);color:#ffb4ab":
+                  "background:rgba(32,31,31,1);color:rgba(198,198,203,.4)";
+      sh += `<div class="flex items-center justify-between mb-3 last:mb-0">
+        <span class="text-xs truncate" style="color:rgba(198,198,203,.5);max-width:65%">${nm.length>22?nm.slice(0,20)+"…":nm}</span>
+        <span class="text-[9px] font-bold font-headline px-2 py-0.5 rounded-full flex-shrink-0" style="${hcl}">${hl}</span></div>`;
+    });
+    const mSm = document.getElementById("mob-smart");
+    if (mSm) mSm.innerHTML = sh || '<span class="text-xs" style="color:rgba(198,198,203,.3)">Sin datos</span>';
+  }
+  /* Mobile Discos */
+  if (s.disks) {
+    let dh = "";
+    s.disks.split(";").forEach(d => {
+      d = d.trim(); if (!d) return;
+      const p = d.split("|"); if (p.length < 3) return;
+      const pct = parseFloat(p[2]);
+      const bc = pct>90?"#ffb4ab":pct>75?"#fabd00":"#00e475";
+      dh += `<div class="mb-4 last:mb-0">
+        <div class="flex justify-between text-xs font-mono mb-1.5">
+          <span style="color:rgba(198,198,203,.5)">${p[0]}${p[3]?" "+p[3]:""}</span>
+          <span style="font-weight:700;color:#e5e2e1">${p[1]}</span></div>
+        <div style="height:6px;width:100%;background:#353534;border-radius:9999px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${bc};border-radius:9999px"></div></div></div>`;
+    });
+    const mDk = document.getElementById("mob-disks");
+    if (mDk) mDk.innerHTML = dh || '<span class="text-xs" style="color:rgba(198,198,203,.3)">Sin datos</span>';
+  }
 }
 
 /* ── Issues ──────────────────────────────────────────────────────── */
@@ -3440,7 +3882,17 @@ function load() {
 
     if (s.snapshot) renderHealth(s.snapshot);
     renderIssues(iss.issues);
+    renderMobAlerts(iss.issues);
     renderIncidents(incs.incidents);
+
+    /* Mobile stats */
+    const mBsod = document.getElementById("mob-s-bsod");
+    if (mBsod) {
+      mBsod.textContent = s.bsods_today ?? "—";
+      document.getElementById("mob-s-crit").textContent = s.critical_today ?? "—";
+      document.getElementById("mob-s-err").textContent  = s.errors_today  ?? "—";
+      document.getElementById("mob-s-warn").textContent = s.warnings_today ?? "—";
+    }
 
     /* Events table */
     const events = data.events || [];
@@ -3490,6 +3942,7 @@ function load() {
       tbody.appendChild(tr);
       if (expanded.has(e.id) && e.analysis) insertArow(e.id, e.analysis);
     });
+    renderMobEvents(events);
   })
   .catch(() => {
     document.getElementById("dot-live").style.background = "#ffb4ab";
@@ -3590,8 +4043,14 @@ async function loadSettings() {
   try {
     const r = await fetch(`${B}/api/settings?secret=${S}`);
     const d = await r.json();
-    document.getElementById("tg-token").value  = IS_DEMO && d.telegram_token   ? "••••••••••••••••••••" : (d.telegram_token   || "");
-    document.getElementById("tg-chatid").value = IS_DEMO && d.telegram_chat_id ? "••••••••••" : (d.telegram_chat_id || "");
+    const tok  = IS_DEMO && d.telegram_token   ? "••••••••••••••••••••" : (d.telegram_token   || "");
+    const chat = IS_DEMO && d.telegram_chat_id ? "••••••••••"           : (d.telegram_chat_id || "");
+    document.getElementById("tg-token").value  = tok;
+    document.getElementById("tg-chatid").value = chat;
+    const mt = document.getElementById("mob-tg-token");
+    const mc = document.getElementById("mob-tg-chatid");
+    if (mt) mt.value = tok;
+    if (mc) mc.value = chat;
   } catch(e) {}
 }
 
