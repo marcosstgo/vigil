@@ -2,7 +2,7 @@
 
 Windows system monitor with a real-time web dashboard, AI-powered event diagnosis, and Telegram alerts.
 
-![Dashboard](vigil_preview.png)
+![Dashboard](screenshot.jpg)
 
 ## Features
 
