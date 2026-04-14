@@ -94,7 +94,7 @@ $gpuName      = $null
 
 # Nombre de GPU via Win32_VideoController (funciona con AMD, NVIDIA, Intel)
 try {
-    $vc = Get-CimInstance -ClassName Win32_VideoController -ErrorAction SilentlyContinue |
+    $vc = Get-CimInstance -ClassName Win32_VideoController -OperationTimeoutSec 5 -ErrorAction SilentlyContinue |
           Where-Object { $_.Name -notmatch 'Microsoft|Remote|Virtual|Basic' } |
           Select-Object -First 1
     if ($vc) { $gpuName = $vc.Name.Trim() }
@@ -184,7 +184,7 @@ $metrics = [PSCustomObject]@{
 def run_ps():
     r = subprocess.run(
         ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", PS_SCRIPT],
-        capture_output=True, text=True, timeout=45,
+        capture_output=True, text=True, timeout=60,
         creationflags=0x08000000  # CREATE_NO_WINDOW — evita que aparezca la ventana de PS
     )
     if not r.stdout.strip():
