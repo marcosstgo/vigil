@@ -3391,7 +3391,7 @@ function loadRecs() {
 /* ── Settings ────────────────────────────────────────────────────── */
 async function loadSettings() {
   try {
-    const r = await fetch(`${BASE}/api/settings?secret=${SECRET}`);
+    const r = await fetch(`${B}/api/settings?secret=${S}`);
     const d = await r.json();
     document.getElementById("tg-token").value  = d.telegram_token   || "";
     document.getElementById("tg-chatid").value = d.telegram_chat_id || "";
@@ -3404,7 +3404,7 @@ async function saveTelegram() {
   const status = document.getElementById("tg-status");
   status.textContent = "Guardando…"; status.style.color = "rgba(198,198,203,.4)";
   try {
-    const r = await fetch(`${BASE}/api/settings?secret=${SECRET}&telegram_token=${encodeURIComponent(token)}&telegram_chat_id=${encodeURIComponent(chatid)}`, { method: "POST" });
+    const r = await fetch(`${B}/api/settings?secret=${S}&telegram_token=${encodeURIComponent(token)}&telegram_chat_id=${encodeURIComponent(chatid)}`, { method: "POST" });
     if (!r.ok) throw new Error();
     status.textContent = "✓ Guardado"; status.style.color = "#00e475";
   } catch(e) {
@@ -3417,7 +3417,7 @@ async function testTelegram() {
   const status = document.getElementById("tg-status");
   status.textContent = "Enviando…"; status.style.color = "rgba(198,198,203,.4)";
   try {
-    const r = await fetch(`${BASE}/api/settings/test-telegram?secret=${SECRET}`, { method: "POST" });
+    const r = await fetch(`${B}/api/settings/test-telegram?secret=${S}`, { method: "POST" });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || "Error");
     status.textContent = "✓ Mensaje enviado"; status.style.color = "#00e475";
