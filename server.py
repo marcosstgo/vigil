@@ -733,7 +733,7 @@ def receive_events(batch: EventBatch, bg: BackgroundTasks):
 @app.get("/api/events")
 def list_events(secret: str = Query(...), limit: int = 100, offset: int = 0,
                 level: Optional[int] = None, log_name: Optional[str] = None,
-                category: Optional[str] = None):
+                category: Optional[str] = None, hostname: str = Query(default="")):
     user = get_user(secret)
     uid  = user["id"]
     conn = get_db()
@@ -745,6 +745,8 @@ def list_events(secret: str = Query(...), limit: int = 100, offset: int = 0,
         where.append("log_name = ?"); params.append(log_name)
     if category:
         where.append("category = ?"); params.append(category)
+    if hostname:
+        where.append("hostname = ?"); params.append(hostname)
     w     = "WHERE " + " AND ".join(where)
     rows  = conn.execute(f"SELECT * FROM events {w} ORDER BY id DESC LIMIT ? OFFSET ?",
                          params + [limit, offset]).fetchall()
@@ -752,19 +754,37 @@ def list_events(secret: str = Query(...), limit: int = 100, offset: int = 0,
     conn.close()
     return {"total": total, "events": [dict(r) for r in rows]}
 
+@app.get("/api/machines")
+def list_machines(secret: str = Query(...)):
+    """Lista los hostnames únicos que han reportado para este usuario."""
+    user = get_user(secret)
+    uid  = user["id"]
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT DISTINCT hostname FROM snapshots WHERE user_id=? AND hostname IS NOT NULL ORDER BY hostname",
+        (uid,)
+    ).fetchall()
+    conn.close()
+    return {"machines": [r["hostname"] for r in rows]}
+
 @app.get("/api/stats")
-def stats(secret: str = Query(...)):
+def stats(secret: str = Query(...), hostname: str = Query(default="")):
     user  = get_user(secret)
     uid   = user["id"]
     conn  = get_db()
     today = datetime.now().strftime("%Y-%m-%d")
-    snap  = conn.execute("SELECT * FROM snapshots WHERE user_id=? ORDER BY id DESC LIMIT 1", (uid,)).fetchone()
+    h_filter = " AND hostname=?" if hostname else ""
+    h_params = [hostname] if hostname else []
+    snap  = conn.execute(
+        f"SELECT * FROM snapshots WHERE user_id=?{h_filter} ORDER BY id DESC LIMIT 1",
+        [uid] + h_params
+    ).fetchone()
     s = {
-        "total":          conn.execute("SELECT COUNT(*) FROM events WHERE user_id=?", (uid,)).fetchone()[0],
-        "critical_today": conn.execute("SELECT COUNT(*) FROM events WHERE user_id=? AND level=1 AND time_created LIKE ?", (uid, f"{today}%")).fetchone()[0],
-        "errors_today":   conn.execute("SELECT COUNT(*) FROM events WHERE user_id=? AND level=2 AND time_created LIKE ?", (uid, f"{today}%")).fetchone()[0],
-        "warnings_today": conn.execute("SELECT COUNT(*) FROM events WHERE user_id=? AND level=3 AND time_created LIKE ?", (uid, f"{today}%")).fetchone()[0],
-        "bsods_today":    conn.execute("SELECT COUNT(*) FROM events WHERE user_id=? AND event_id IN (41,1001) AND time_created LIKE ?", (uid, f"{today}%")).fetchone()[0],
+        "total":          conn.execute(f"SELECT COUNT(*) FROM events WHERE user_id=?{h_filter}", [uid]+h_params).fetchone()[0],
+        "critical_today": conn.execute(f"SELECT COUNT(*) FROM events WHERE user_id=? AND level=1 AND time_created LIKE ?{h_filter}", [uid,f"{today}%"]+h_params).fetchone()[0],
+        "errors_today":   conn.execute(f"SELECT COUNT(*) FROM events WHERE user_id=? AND level=2 AND time_created LIKE ?{h_filter}", [uid,f"{today}%"]+h_params).fetchone()[0],
+        "warnings_today": conn.execute(f"SELECT COUNT(*) FROM events WHERE user_id=? AND level=3 AND time_created LIKE ?{h_filter}", [uid,f"{today}%"]+h_params).fetchone()[0],
+        "bsods_today":    conn.execute(f"SELECT COUNT(*) FROM events WHERE user_id=? AND event_id IN (41,1001) AND time_created LIKE ?{h_filter}", [uid,f"{today}%"]+h_params).fetchone()[0],
         "snapshot":       dict(snap) if snap else None,
     }
     conn.close()
@@ -2294,6 +2314,13 @@ body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
       </div>
     </div>
     <div class="flex items-center gap-3">
+      <!-- Machine selector — visible solo si hay 2+ PCs -->
+      <div style="display:none" id="machine-selector">
+        <select id="machine-select" onchange="currentMachine=this.value;load()"
+          style="background:#1e1e1e;border:1px solid #2e2e2e;color:#e5e2e1;border-radius:8px;
+                 padding:5px 10px;font-size:11px;font-family:'Space Grotesk',sans-serif;outline:none;cursor:pointer">
+        </select>
+      </div>
       <span class="text-[10px] font-mono" style="color:rgba(198,198,203,.3)" id="upd-hdr">—</span>
       <button onclick="load()"
         class="text-[10px] font-headline font-bold tracking-widest uppercase py-2 px-4 rounded-full bg-surface-container-high text-on-surface transition-all"
@@ -2599,6 +2626,7 @@ const S = "__SECRET__", B = "__BASE__";
 let arTimer = null, arOn = false;
 let expanded = new Set();
 let cpuHistory = [];
+let currentMachine = "";
 
 const api  = p => fetch(B+p+(p.includes("?")?"&":"?")+"secret="+S).then(r=>r.json());
 const post = p => fetch(B+p+(p.includes("?")?"&":"?")+"secret="+S,{method:"POST"}).then(r=>r.json());
@@ -2862,6 +2890,28 @@ function analyzeIncident(incId, btn) {
   }).catch(()=>{btn.disabled=false;btn.textContent="Error";});
 }
 
+/* ── Machine selector ────────────────────────────────────────────── */
+function loadMachines() {
+  api("/api/machines").then(data => {
+    const machines = data.machines || [];
+    const sel = document.getElementById("machine-select");
+    if (!sel) return;
+    if (machines.length <= 1) {
+      document.getElementById("machine-selector").style.display = "none";
+      return;
+    }
+    document.getElementById("machine-selector").style.display = "";
+    const prev = currentMachine;
+    sel.innerHTML = '<option value="">Todas las PCs</option>' +
+      machines.map(m => `<option value="${m}"${m===currentMachine?" selected":""}>${m}</option>`).join("");
+    if (!currentMachine && machines.length > 0) {
+      currentMachine = machines[0];
+      sel.value = currentMachine;
+    }
+    if (currentMachine !== prev) load();
+  });
+}
+
 /* ── Events Table ────────────────────────────────────────────────── */
 function load() {
   const lvl = document.getElementById("fl").value;
@@ -2871,8 +2921,10 @@ function load() {
   if (lvl) path += "&level="+lvl;
   if (log) path += "&log_name="+encodeURIComponent(log);
   if (cat) path += "&category="+encodeURIComponent(cat);
+  if (currentMachine) path += "&hostname="+encodeURIComponent(currentMachine);
+  const statsPath = currentMachine ? "/api/stats?hostname="+encodeURIComponent(currentMachine) : "/api/stats";
 
-  Promise.all([api(path), api("/api/stats"), api("/api/issues"), api("/api/incidents")])
+  Promise.all([api(path), api(statsPath), api("/api/issues"), api("/api/incidents")])
   .then(([data, s, iss, incs]) => {
     /* Status */
     document.getElementById("dot-live").style.background = "#00e475";
@@ -3002,6 +3054,7 @@ function toggleAR() {
 
 load();
 loadSettings();
+loadMachines();
 
 /* ── Settings ────────────────────────────────────────────────────── */
 async function loadSettings() {
