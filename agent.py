@@ -127,6 +127,39 @@ try {
     }
 } catch {}
 
+# AMD / Intel / cualquier GPU: utilizacion via Windows perf counters (fallback si nvidia-smi no dio datos)
+if ($null -eq $gpuPercent) {
+    try {
+        $engines = Get-CimInstance -ClassName Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine `
+                   -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Name -match 'engtype_3D' }
+        if ($engines) {
+            $gpuPercent = [int](($engines | Measure-Object -Property UtilizationPercentage -Maximum).Maximum)
+        }
+    } catch {}
+}
+
+# VRAM usada via Windows perf counters (AMD / Intel)
+if ($null -eq $gpuVramUsed) {
+    try {
+        $vramUsed = Get-CimInstance -ClassName Win32_PerfFormattedData_GPUPerformanceCounters_GPULocalAdapterMemory `
+                    -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($vramUsed) { $gpuVramUsed = [int]($vramUsed.LocalAdapterMemoryUsed / 1MB) }
+    } catch {}
+}
+
+# VRAM total via Win32_VideoController (fallback — limitado a 4 GB en sistemas antiguos)
+if ($null -eq $gpuVramTotal) {
+    try {
+        $vcram = Get-CimInstance -ClassName Win32_VideoController -OperationTimeoutSec 5 -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -notmatch 'Microsoft|Remote|Virtual|Basic' } |
+                 Select-Object -First 1
+        if ($vcram -and $vcram.AdapterRAM -gt 0) {
+            $gpuVramTotal = [int]($vcram.AdapterRAM / 1MB)
+        }
+    } catch {}
+}
+
 $cpuTemp = $null
 # Metodo 1: MSAcpi_ThermalZoneTemperature — toma la zona mas caliente en rango razonable
 try {
