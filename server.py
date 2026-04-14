@@ -2044,6 +2044,20 @@ tailwind.config = {
     width: 2.5rem;
     height: 2.5rem;
   }
+  @keyframes demo-glow {
+    0%, 100% { box-shadow: 0 0 8px 2px rgba(0,228,117,.3), 0 0 24px 4px rgba(0,228,117,.1); }
+    50%       { box-shadow: 0 0 18px 6px rgba(0,228,117,.6), 0 0 48px 12px rgba(0,228,117,.2); }
+  }
+  .btn-demo {
+    animation: demo-glow 2.2s ease-in-out infinite;
+    border-color: rgba(0,228,117,.5) !important;
+    color: #00e475 !important;
+  }
+  .btn-demo:hover {
+    background: rgba(0,228,117,.08) !important;
+    animation: none;
+    box-shadow: 0 0 28px 8px rgba(0,228,117,.5);
+  }
   .hero { position: relative; overflow: hidden; }
   .hero::before {
     content: '';
@@ -2121,7 +2135,7 @@ tailwind.config = {
         Crear cuenta gratis
       </a>
       <a href="__BASE__/?secret=vigil-demo" target="_blank"
-         class="flex items-center gap-2 justify-center bg-white/5 border border-white/10 text-white font-medium text-lg px-10 py-4 rounded-xl hover:bg-white/10 transition-all">
+         class="btn-demo flex items-center gap-2 justify-center bg-white/5 border border-white/10 text-white font-medium text-lg px-10 py-4 rounded-xl hover:bg-white/10 transition-all">
         <span style="font-size:16px">▶</span> Ver demo en vivo
       </a>
       <a href="__DOWNLOAD__" download
