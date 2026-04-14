@@ -2055,6 +2055,18 @@ tailwind.config = {
 
 <!-- HERO -->
 <section class="pt-40 pb-28 px-6 text-center relative overflow-hidden">
+  <!-- Screenshot background -->
+  <div class="absolute inset-0 pointer-events-none" style="
+    background-image: url('https://raw.githubusercontent.com/marcosstgo/vigil/master/screenshot.jpg');
+    background-size: cover;
+    background-position: center top;
+    filter: blur(12px) brightness(0.18) saturate(0.6);
+    transform: scale(1.05);
+  "></div>
+  <!-- Gradient overlay para fundir con el fondo -->
+  <div class="absolute inset-0 pointer-events-none" style="
+    background: linear-gradient(to bottom, transparent 40%, #0e0e0e 100%);
+  "></div>
   <!-- Background glow -->
   <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
     <div class="w-[600px] h-[600px] rounded-full bg-brand/5 blur-3xl"></div>
