@@ -2559,6 +2559,20 @@ body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
 
 @keyframes pulse2{0%,100%{opacity:1}50%{opacity:.3}}
 .live-pulse{animation:pulse2 2s infinite}
+
+/* ── Mobile ── */
+@media (max-width: 767px) {
+  aside { transform: translateX(-100%); transition: transform .25s ease; }
+  aside.open { transform: translateX(0); }
+  main  { margin-left: 0 !important; }
+  #mob-header { display: flex !important; }
+  #mob-overlay { display: block; }
+  #mob-overlay.hidden { display: none !important; }
+}
+@media (min-width: 768px) {
+  #mob-header { display: none !important; }
+  #mob-overlay { display: none !important; }
+}
 </style>
 </head>
 <body class="min-h-screen flex overflow-hidden bg-surface text-on-surface">
@@ -2574,6 +2588,29 @@ body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
 
 <!-- Dot-grid texture -->
 <div class="fixed inset-0 pointer-events-none opacity-[0.025] z-[-1] dot-texture"></div>
+
+<!-- Mobile header -->
+<div id="mob-header" class="fixed top-0 left-0 right-0 z-40 items-center justify-between px-4"
+     style="display:none;height:52px;background:#131313;border-bottom:1px solid rgba(69,71,75,.25)">
+  <div class="flex items-center gap-2">
+    <svg width="24" height="24" viewBox="0 0 64 64" fill="none">
+      <circle cx="32" cy="32" r="28" fill="#131313" stroke="#00e475" stroke-width="2.5"/>
+      <ellipse cx="32" cy="32" rx="17" ry="8.5" fill="#00e47510" stroke="#00e475" stroke-width="2"/>
+      <circle cx="32" cy="32" r="7" fill="#00e475"/>
+      <circle cx="29" cy="29" r="2.5" fill="white" opacity=".75"/>
+    </svg>
+    <span class="text-sm font-bold text-primary font-headline tracking-tight">VIGIL</span>
+  </div>
+  <button onclick="toggleSidebar()" style="background:none;border:none;cursor:pointer;padding:8px;color:#e5e2e1">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  </button>
+</div>
+
+<!-- Overlay para cerrar sidebar en mobile -->
+<div id="mob-overlay" onclick="toggleSidebar()"
+     class="hidden fixed inset-0 z-40" style="background:rgba(0,0,0,.6)"></div>
 
 <!-- ═══ LEFT SIDEBAR ═══ -->
 <aside class="h-screen w-60 fixed left-0 top-0 bg-surface-container-low flex flex-col p-5 pt-7 z-50"
@@ -2666,7 +2703,7 @@ body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
 </aside>
 
 <!-- ═══ MAIN ═══ -->
-<main class="flex-1 min-h-screen flex flex-col" style="margin-left:240px">
+<main class="flex-1 min-h-screen flex flex-col" style="margin-left:240px" id="main-content">
 
   <!-- TOP HEADER -->
   <header class="fixed top-0 right-0 z-40 flex justify-between items-center px-8 py-3.5"
@@ -3029,6 +3066,19 @@ body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
 <script>
 const S = "__SECRET__", B = "__BASE__";
 const IS_DEMO = S === "vigil-demo";
+
+/* ── Mobile sidebar ── */
+function toggleSidebar() {
+  const aside = document.querySelector("aside");
+  const overlay = document.getElementById("mob-overlay");
+  aside.classList.toggle("open");
+  overlay.classList.toggle("hidden");
+}
+// En mobile, empuja el main bajo el header
+if (window.innerWidth < 768) {
+  const m = document.getElementById("main-content");
+  if (m) m.style.paddingTop = "52px";
+}
 if (IS_DEMO) {
   document.getElementById("demo-banner").style.display = "block";
   // Empuja el sidebar y el main hacia abajo para no tapar contenido
