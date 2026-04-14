@@ -3576,8 +3576,8 @@ async function loadSettings() {
   try {
     const r = await fetch(`${B}/api/settings?secret=${S}`);
     const d = await r.json();
-    document.getElementById("tg-token").value  = d.telegram_token   || "";
-    document.getElementById("tg-chatid").value = d.telegram_chat_id || "";
+    document.getElementById("tg-token").value  = IS_DEMO && d.telegram_token   ? "••••••••••••••••••••" : (d.telegram_token   || "");
+    document.getElementById("tg-chatid").value = IS_DEMO && d.telegram_chat_id ? "••••••••••" : (d.telegram_chat_id || "");
   } catch(e) {}
 }
 
