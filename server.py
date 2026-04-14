@@ -1,7 +1,8 @@
 import os, sqlite3, threading, time, secrets, string
 import urllib.request, urllib.parse
+from collections import defaultdict
 from datetime import datetime, timezone
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import List, Optional
@@ -177,6 +178,33 @@ def migrate_db():
     conn.close()
 
 migrate_db()
+
+# ── Retención de datos ────────────────────────────────────────────────────────
+def _cleanup_loop():
+    """Borra eventos >30 días y snapshots >14 días cada 24h."""
+    while True:
+        try:
+            conn = get_db()
+            conn.execute("DELETE FROM events    WHERE received_at < datetime('now','-30 days')")
+            conn.execute("DELETE FROM snapshots WHERE received_at < datetime('now','-14 days')")
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+        time.sleep(86400)
+
+threading.Thread(target=_cleanup_loop, daemon=True).start()
+
+# ── Rate limiting ─────────────────────────────────────────────────────────────
+_rate_buckets: dict = defaultdict(list)
+
+def check_rate_limit(key: str, max_req: int = 5, window_s: int = 3600):
+    now = time.time()
+    bucket = [t for t in _rate_buckets[key] if now - t < window_s]
+    _rate_buckets[key] = bucket
+    if len(bucket) >= max_req:
+        raise HTTPException(429, f"Demasiadas solicitudes. Intenta en {window_s//60} minutos.")
+    _rate_buckets[key].append(now)
 
 def recategorize_db():
     """Re-categoriza eventos existentes con la lógica nueva."""
@@ -759,6 +787,29 @@ def list_events(secret: str = Query(...), limit: int = 100, offset: int = 0,
     total = conn.execute(f"SELECT COUNT(*) FROM events {w}", params).fetchone()[0]
     conn.close()
     return {"total": total, "events": [dict(r) for r in rows]}
+
+@app.get("/api/snapshots/history")
+def snapshots_history(secret: str = Query(...), hostname: str = Query(default=""), hours: int = 24):
+    """Historial de snapshots para gráficas. Devuelve hasta 120 puntos en el periodo."""
+    user = get_user(secret)
+    uid  = user["id"]
+    conn = get_db()
+    hf = " AND hostname=?" if hostname else ""
+    hp = [hostname] if hostname else []
+    rows = conn.execute(
+        f"""SELECT received_at, cpu_percent, mem_percent, gpu_percent, gpu_temp, cpu_temp
+            FROM snapshots
+            WHERE user_id=? AND received_at > datetime('now','-{int(hours)} hours'){hf}
+            ORDER BY id ASC""",
+        [uid]+hp
+    ).fetchall()
+    conn.close()
+    # Samplear a max 120 puntos para no saturar el cliente
+    data = [dict(r) for r in rows]
+    if len(data) > 120:
+        step = len(data) // 120
+        data = data[::step]
+    return {"history": data}
 
 @app.get("/api/machines")
 def list_machines(secret: str = Query(...)):
@@ -1458,15 +1509,30 @@ def get_settings(secret: str = Query(...)):
 @app.post("/api/settings")
 def save_settings(secret: str = Query(...),
                   telegram_token: str = Query(default=""),
-                  telegram_chat_id: str = Query(default="")):
+                  telegram_chat_id: str = Query(default=""),
+                  bg: BackgroundTasks = None):
     user = get_user(secret)
+    token   = telegram_token.strip()
+    chat_id = telegram_chat_id.strip()
     conn = get_db()
+    prev = conn.execute(
+        "SELECT telegram_token, telegram_chat_id FROM users WHERE id=?", (user["id"],)
+    ).fetchone()
+    was_empty = not (prev["telegram_token"] and prev["telegram_chat_id"])
     conn.execute(
         "UPDATE users SET telegram_token=?, telegram_chat_id=? WHERE id=?",
-        (telegram_token.strip() or None, telegram_chat_id.strip() or None, user["id"])
+        (token or None, chat_id or None, user["id"])
     )
     conn.commit()
     conn.close()
+    # Mensaje de bienvenida automático al configurar Telegram por primera vez
+    if was_empty and token and chat_id and bg:
+        def _welcome():
+            send_telegram(
+                f"👁 <b>Vigil activado</b>\n\nHola <b>{user['name']}</b>, recibirás alertas aquí cuando tu PC tenga eventos críticos.",
+                token, chat_id
+            )
+        bg.add_task(_welcome)
     return {"ok": True}
 
 @app.post("/api/settings/test-telegram")
@@ -1494,7 +1560,9 @@ def test_telegram(secret: str = Query(...)):
     return {"ok": True}
 
 @app.post("/api/register")
-def register(name: str = Query(...), email: str = Query(default="")):
+def register(request: Request, name: str = Query(...), email: str = Query(default="")):
+    ip = request.client.host if request.client else "unknown"
+    check_rate_limit(f"register:{ip}", max_req=5, window_s=3600)
     name = name.strip()
     if not name or len(name) < 2:
         raise HTTPException(400, "Nombre requerido (mínimo 2 caracteres)")
@@ -2281,6 +2349,7 @@ HTML = r"""<!DOCTYPE html>
 <title>Vigil — Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 tailwind.config = {
   theme: {
@@ -2492,7 +2561,7 @@ body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
     <div class="flex items-center gap-3">
       <!-- Machine selector — visible solo si hay 2+ PCs -->
       <div style="display:none" id="machine-selector">
-        <select id="machine-select" onchange="currentMachine=this.value;load()"
+        <select id="machine-select" onchange="currentMachine=this.value;load();loadHistory()"
           style="background:#1e1e1e;border:1px solid #2e2e2e;color:#e5e2e1;border-radius:8px;
                  padding:5px 10px;font-size:11px;font-family:'Space Grotesk',sans-serif;outline:none;cursor:pointer">
         </select>
@@ -2640,6 +2709,29 @@ body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
         <div class="bg-surface-container-low rounded-xl p-5">
           <p class="text-[10px] font-headline font-black uppercase tracking-widest text-on-surface-variant mb-4" style="opacity:.5">Almacenamiento</p>
           <div id="disks-list"><span class="text-xs" style="color:rgba(198,198,203,.3)">Esperando datos…</span></div>
+        </div>
+      </div>
+
+      <!-- Row 3: History charts -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-5">
+        <div class="bg-surface-container-low rounded-xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <p class="text-[10px] font-headline font-black uppercase tracking-widest text-on-surface-variant" style="opacity:.5">CPU — 24h</p>
+            <span class="text-[9px] font-mono" style="color:rgba(198,198,203,.25)" id="hw-hist-label">cargando…</span>
+          </div>
+          <canvas id="chart-cpu" height="80"></canvas>
+        </div>
+        <div class="bg-surface-container-low rounded-xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <p class="text-[10px] font-headline font-black uppercase tracking-widest text-on-surface-variant" style="opacity:.5">RAM — 24h</p>
+          </div>
+          <canvas id="chart-ram" height="80"></canvas>
+        </div>
+        <div class="bg-surface-container-low rounded-xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <p class="text-[10px] font-headline font-black uppercase tracking-widest text-on-surface-variant" style="opacity:.5">Temperatura — 24h</p>
+          </div>
+          <canvas id="chart-temp" height="80"></canvas>
         </div>
       </div>
     </section>
@@ -3258,6 +3350,7 @@ load();
 loadSettings();
 loadMachines();
 loadRecs();
+loadHistory();
 
 /* ── Recommendations ─────────────────────────────────────────────── */
 function loadRecs() {
@@ -3332,6 +3425,155 @@ async function testTelegram() {
     status.textContent = e.message || "Error al enviar"; status.style.color = "#ffb4ab";
   }
   setTimeout(() => { status.textContent = ""; }, 4000);
+}
+
+/* ── Hardware History Charts ─────────────────────────────────────── */
+let _chartCpu = null, _chartRam = null, _chartTemp = null;
+
+const CHART_DEFAULTS = {
+  responsive: true,
+  animation: false,
+  interaction: { mode: "index", intersect: false },
+  plugins: { legend: { display: false }, tooltip: {
+    backgroundColor: "rgba(18,18,20,.95)",
+    borderColor: "rgba(255,255,255,.08)", borderWidth: 1,
+    titleColor: "rgba(198,198,203,.5)", bodyColor: "#e5e2e1",
+    titleFont: { family: "'Space Grotesk',sans-serif", size: 10, weight: "700" },
+    bodyFont: { family: "'Space Grotesk',sans-serif", size: 11 },
+    padding: 10,
+  }},
+  scales: {
+    x: { display: false },
+    y: {
+      grid: { color: "rgba(255,255,255,.04)", drawBorder: false },
+      ticks: {
+        color: "rgba(198,198,203,.3)",
+        font: { family: "'Space Grotesk',sans-serif", size: 9 },
+        maxTicksLimit: 4,
+      },
+      border: { display: false },
+    }
+  }
+};
+
+function makeChart(id, datasets, yOptions = {}) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return null;
+  return new Chart(ctx, {
+    type: "line",
+    data: { labels: [], datasets },
+    options: {
+      ...CHART_DEFAULTS,
+      scales: {
+        ...CHART_DEFAULTS.scales,
+        y: { ...CHART_DEFAULTS.scales.y, ...yOptions }
+      }
+    }
+  });
+}
+
+function lineDataset(label, color, data = []) {
+  return {
+    label,
+    data,
+    borderColor: color,
+    backgroundColor: color.replace(")", ",.08)").replace("rgb(", "rgba(").replace("#", ""),
+    borderWidth: 1.5,
+    pointRadius: 0,
+    tension: 0.35,
+    fill: true,
+  };
+}
+
+// Fix backgroundColor for hex colors
+function hexToRgba(hex, a) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function lineDs(label, color, data = []) {
+  return {
+    label,
+    data,
+    borderColor: color,
+    backgroundColor: hexToRgba(color, 0.07),
+    borderWidth: 1.5,
+    pointRadius: 0,
+    tension: 0.35,
+    fill: true,
+  };
+}
+
+function loadHistory() {
+  const hostParam = currentMachine ? "&hostname=" + encodeURIComponent(currentMachine) : "";
+  api("/api/snapshots/history?hours=24" + hostParam).then(data => {
+    const pts = data.history || [];
+    if (!pts.length) return;
+
+    // Format labels as HH:MM
+    const labels = pts.map(p => {
+      const d = new Date(p.received_at);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    });
+
+    const cpuData  = pts.map(p => p.cpu_percent  ?? null);
+    const ramData  = pts.map(p => p.mem_percent  ?? null);
+    const cTempData = pts.map(p => p.cpu_temp    ?? null);
+    const gTempData = pts.map(p => p.gpu_temp    ?? null);
+    const hasGpuTemp = gTempData.some(v => v !== null);
+
+    // Update range label
+    const lbl = document.getElementById("hw-hist-label");
+    if (lbl && pts.length >= 2) {
+      const first = new Date(pts[0].received_at);
+      const last  = new Date(pts[pts.length-1].received_at);
+      lbl.textContent = first.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})
+        + " → " + last.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+    }
+
+    // CPU chart
+    if (_chartCpu) {
+      _chartCpu.data.labels = labels;
+      _chartCpu.data.datasets[0].data = cpuData;
+      _chartCpu.update();
+    } else {
+      _chartCpu = makeChart("chart-cpu",
+        [lineDs("CPU %", "#00e475", cpuData)],
+        { min: 0, max: 100, ticks: { ...CHART_DEFAULTS.scales.y.ticks, callback: v => v + "%" } }
+      );
+      if (_chartCpu) { _chartCpu.data.labels = labels; _chartCpu.update(); }
+    }
+
+    // RAM chart
+    if (_chartRam) {
+      _chartRam.data.labels = labels;
+      _chartRam.data.datasets[0].data = ramData;
+      _chartRam.update();
+    } else {
+      _chartRam = makeChart("chart-ram",
+        [lineDs("RAM %", "#fabd00", ramData)],
+        { min: 0, max: 100, ticks: { ...CHART_DEFAULTS.scales.y.ticks, callback: v => v + "%" } }
+      );
+      if (_chartRam) { _chartRam.data.labels = labels; _chartRam.update(); }
+    }
+
+    // Temp chart (CPU + GPU if available)
+    const tempDs = [lineDs("CPU °C", "#f87171", cTempData)];
+    if (hasGpuTemp) tempDs.push(lineDs("GPU °C", "#a78bfa", gTempData));
+
+    if (_chartTemp) {
+      _chartTemp.data.labels = labels;
+      _chartTemp.data.datasets[0].data = cTempData;
+      if (hasGpuTemp && _chartTemp.data.datasets[1]) _chartTemp.data.datasets[1].data = gTempData;
+      _chartTemp.update();
+    } else {
+      _chartTemp = makeChart("chart-temp",
+        tempDs,
+        { ticks: { ...CHART_DEFAULTS.scales.y.ticks, callback: v => v + "°" } }
+      );
+      if (_chartTemp) { _chartTemp.data.labels = labels; _chartTemp.update(); }
+    }
+  }).catch(() => {});
 }
 
 </script>
