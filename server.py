@@ -3061,6 +3061,10 @@ body.light-mode .bc-Application{ background:#d1fae5 !important; color:#065f46 !i
               <option value="SISTEMA">Sistema</option>
             </select>
           </div>
+          <button id="btn-group" onclick="toggleGrouped()"
+            class="text-[10px] font-headline font-bold tracking-widest uppercase py-2 px-4 rounded-full bg-surface-container-high text-on-surface transition-all"
+            onmouseover="this.style.background='#00e475';this.style.color='#003918'"
+            onmouseout="if(!groupedMode){this.style.background='';this.style.color=''}">⊞ Agrupar</button>
           <span class="text-[10px] font-mono" style="color:rgba(198,198,203,.35)" id="ev-count"></span>
         </div>
       </div>
@@ -4000,6 +4004,131 @@ function loadMachines() {
   });
 }
 
+/* ── Events: grouped / flat ──────────────────────────────────────── */
+let groupedMode = false;
+const openGroups = new Set();
+
+function toggleGrouped() {
+  groupedMode = !groupedMode;
+  const btn = document.getElementById("btn-group");
+  btn.style.background = groupedMode ? "#00e475" : "";
+  btn.style.color      = groupedMode ? "#003918"  : "";
+  load();
+}
+
+function _evtRow(e, compact) {
+  const lvlStyle = e.level===1
+    ? "background:rgba(147,0,10,.25);color:#ffb4ab"
+    : e.level===2 ? "background:rgba(45,18,0,.5);color:#fb923c"
+                  : "background:rgba(250,189,0,.1);color:#fabd00";
+  const py = compact ? "py-2.5" : "py-4";
+  const msg = esc((e.message||"").substring(0,110));
+  const tr = document.createElement("tr");
+  tr.id = "row-"+e.id;
+  tr.style.cssText = `border-bottom:1px solid rgba(69,71,75,.08);transition:background .15s;cursor:default`;
+  tr.addEventListener("mouseover",()=>tr.style.background="#201f1f");
+  tr.addEventListener("mouseout", ()=>tr.style.background="");
+  tr.innerHTML = `
+    <td class="px-6 ${py} font-mono text-xs whitespace-nowrap" style="color:rgba(198,198,203,.35)">${compact?'<span style="color:rgba(69,71,75,.4);margin-right:6px">└</span>':''}${fmt(e.time_created)}</td>
+    <td class="px-4 ${py}"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold font-headline uppercase" style="${lvlStyle}">${e.level_name}</span></td>
+    <td class="px-4 ${py}"><span class="bc-${e.category||'SISTEMA'} px-2 py-0.5 rounded text-[10px] font-bold">${e.category||'SIS'}</span></td>
+    <td class="px-4 ${py} text-xs font-mono" style="color:rgba(198,198,203,.35)">${e.event_id}</td>
+    <td class="px-4 ${py} text-xs max-w-[130px] truncate" style="color:#5b21b6" title="${esc(e.provider)}">${esc(e.provider)}</td>
+    <td class="px-5 ${py} text-xs max-w-xs truncate" style="color:rgba(198,198,203,.45);cursor:pointer"
+        onclick="showMsg(${e.id},${JSON.stringify(e.message)})"
+        onmouseover="this.style.color='#e5e2e1'" onmouseout="this.style.color='rgba(198,198,203,.45)'"
+        >${msg}${(e.message||"").length>110?"…":""}</td>
+    <td class="px-6 ${py} text-right">
+      <button id="btn-${e.id}" onclick="analyze(${e.id})" data-done="${e.analysis?'1':'0'}"
+        class="text-[10px] font-headline font-bold uppercase tracking-widest py-1.5 px-3 rounded-full transition-all opacity-0"
+        style="${e.analysis?"background:rgba(0,228,117,.12);color:#00e475":"background:#2a2a2a;color:rgba(198,198,203,.6)"}">${e.analysis?"Ver":"Analizar"}</button>
+    </td>`;
+  tr.addEventListener("mouseover",()=>{const b=document.getElementById("btn-"+e.id);if(b)b.style.opacity="1"});
+  tr.addEventListener("mouseout", ()=>{const b=document.getElementById("btn-"+e.id);if(b&&!document.getElementById("ar-"+e.id))b.style.opacity="0"});
+  return tr;
+}
+
+function renderFlat(events) {
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "";
+  events.forEach(e => {
+    tbody.appendChild(_evtRow(e, false));
+    if (expanded.has(e.id) && e.analysis) insertArow(e.id, e.analysis);
+  });
+}
+
+function renderGrouped(events) {
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "";
+  // Build groups preserving order of first appearance
+  const order = [], groups = {};
+  events.forEach(e => {
+    const cat = e.category || "SISTEMA";
+    if (!groups[cat]) { groups[cat] = []; order.push(cat); }
+    groups[cat].push(e);
+  });
+
+  order.forEach(cat => {
+    const evts  = groups[cat];
+    const isOpen = openGroups.has(cat);
+    const crit  = evts.filter(e=>e.level===1).length;
+    const errs  = evts.filter(e=>e.level===2).length;
+    const warns = evts.filter(e=>e.level===3).length;
+    let badges  = "";
+    if (crit)  badges += `<span class="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold" style="background:rgba(147,0,10,.25);color:#ffb4ab">${crit} crít.</span>`;
+    if (errs)  badges += `<span class="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold" style="background:rgba(45,18,0,.5);color:#fb923c">${errs} err.</span>`;
+    if (warns) badges += `<span class="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold" style="background:rgba(250,189,0,.1);color:#fabd00">${warns} warn.</span>`;
+
+    // Group header row
+    const gtr = document.createElement("tr");
+    gtr.id = "grp-"+cat;
+    gtr.style.cssText = "border-bottom:1px solid rgba(69,71,75,.15);cursor:pointer;transition:background .15s";
+    gtr.style.background = isOpen ? "rgba(0,228,117,.04)" : "";
+    gtr.addEventListener("mouseover",()=>gtr.style.background="rgba(0,228,117,.06)");
+    gtr.addEventListener("mouseout", ()=>gtr.style.background=openGroups.has(cat)?"rgba(0,228,117,.04)":"");
+    gtr.addEventListener("click",()=>toggleGroup(cat));
+    gtr.innerHTML = `
+      <td class="px-6 py-4 font-mono text-xs whitespace-nowrap" style="color:rgba(198,198,203,.35)">${fmt(evts[0].time_created)}</td>
+      <td class="px-4 py-4" colspan="2">
+        <span class="bc-${cat} px-2.5 py-1 rounded text-[10px] font-bold font-headline">${cat}</span>
+        ${badges}
+      </td>
+      <td class="px-4 py-4 text-xs font-mono" style="color:rgba(198,198,203,.3)" colspan="2">${evts.length} evento${evts.length>1?"s":""}</td>
+      <td class="px-5 py-4 text-xs" style="color:rgba(198,198,203,.25)">
+        ${esc((evts[0].message||"").substring(0,60))}${(evts[0].message||"").length>60?"…":""}
+      </td>
+      <td class="px-6 py-4 text-right">
+        <span class="material-symbols-outlined" id="grp-icon-${cat}"
+          style="font-size:18px;color:rgba(198,198,203,.35);vertical-align:middle;transition:transform .2s;transform:rotate(${isOpen?'180':'0'}deg)">expand_more</span>
+      </td>`;
+    tbody.appendChild(gtr);
+
+    // Child rows
+    evts.forEach(e => {
+      const tr = _evtRow(e, true);
+      tr.classList.add("grp-child");
+      tr.dataset.grp = cat;
+      if (!isOpen) tr.style.display = "none";
+      tr.style.background = "rgba(10,10,10,.25)";
+      tbody.appendChild(tr);
+      if (expanded.has(e.id) && e.analysis) insertArow(e.id, e.analysis);
+    });
+  });
+}
+
+function toggleGroup(cat) {
+  const isOpen = openGroups.has(cat);
+  if (isOpen) openGroups.delete(cat); else openGroups.add(cat);
+  const nowOpen = !isOpen;
+  document.querySelectorAll(".grp-child").forEach(tr => {
+    if (tr.dataset.grp === cat) tr.style.display = nowOpen ? "" : "none";
+  });
+  const icon = document.getElementById("grp-icon-"+cat);
+  if (icon) icon.style.transform = `rotate(${nowOpen?180:0}deg)`;
+  const gtr = document.getElementById("grp-"+cat);
+  if (gtr) gtr.style.background = nowOpen ? "rgba(0,228,117,.04)" : "";
+}
+
 /* ── Events Table ────────────────────────────────────────────────── */
 function load() {
   const lvl = document.getElementById("fl").value;
@@ -4054,49 +4183,8 @@ function load() {
     document.getElementById("ev-count").textContent = events.length ? `${events.length} eventos` : "";
     document.getElementById("empty").style.display  = events.length ? "none" : "";
 
-    const tbody = document.getElementById("tbody");
-    tbody.innerHTML = "";
-    events.forEach(e => {
-      const lvlStyle = e.level===1
-        ? "background:rgba(147,0,10,.25);color:#ffb4ab"
-        : e.level===2
-          ? "background:rgba(45,18,0,.5);color:#fb923c"
-          : "background:rgba(250,189,0,.1);color:#fabd00";
-
-      const tr = document.createElement("tr");
-      tr.id = "row-"+e.id;
-      tr.style.cssText = "border-bottom:1px solid rgba(69,71,75,.08);transition:background .15s;cursor:default";
-      tr.addEventListener("mouseover",()=>tr.style.background="#201f1f");
-      tr.addEventListener("mouseout", ()=>tr.style.background="");
-
-      const msg = esc((e.message||"").substring(0,110));
-      tr.innerHTML = `
-        <td class="px-6 py-4 font-mono text-xs whitespace-nowrap" style="color:rgba(198,198,203,.35)">${fmt(e.time_created)}</td>
-        <td class="px-4 py-4">
-          <span class="px-2 py-1 rounded-full text-[10px] font-bold font-headline uppercase" style="${lvlStyle}">${e.level_name}</span>
-        </td>
-        <td class="px-4 py-4">
-          <span class="bc-${e.category||'SISTEMA'} px-2 py-0.5 rounded text-[10px] font-bold">${e.category||'SIS'}</span>
-        </td>
-        <td class="px-4 py-4 text-xs font-mono" style="color:rgba(198,198,203,.35)">${e.event_id}</td>
-        <td class="px-4 py-4 text-xs max-w-[130px] truncate" style="color:#5b21b6" title="${esc(e.provider)}">${esc(e.provider)}</td>
-        <td class="px-5 py-4 text-xs max-w-xs truncate" style="color:rgba(198,198,203,.45);cursor:pointer"
-            onclick="showMsg(${e.id},${JSON.stringify(e.message)})"
-            onmouseover="this.style.color='#e5e2e1'" onmouseout="this.style.color='rgba(198,198,203,.45)'"
-            >${msg}${(e.message||"").length>110?"…":""}</td>
-        <td class="px-6 py-4 text-right">
-          <button id="btn-${e.id}" onclick="analyze(${e.id})" data-done="${e.analysis?'1':'0'}"
-            class="text-[10px] font-headline font-bold uppercase tracking-widest py-1.5 px-3 rounded-full transition-all opacity-0"
-            style="${e.analysis?"background:rgba(0,228,117,.12);color:#00e475":"background:#2a2a2a;color:rgba(198,198,203,.6)"}">${e.analysis?"Ver":"Analizar"}</button>
-        </td>`;
-
-      /* Show analyze btn on row hover */
-      tr.addEventListener("mouseover",()=>{const b=document.getElementById("btn-"+e.id);if(b)b.style.opacity="1"});
-      tr.addEventListener("mouseout", ()=>{const b=document.getElementById("btn-"+e.id);if(b&&!document.getElementById("ar-"+e.id))b.style.opacity="0"});
-
-      tbody.appendChild(tr);
-      if (expanded.has(e.id) && e.analysis) insertArow(e.id, e.analysis);
-    });
+    if (groupedMode) renderGrouped(events);
+    else             renderFlat(events);
     renderMobEvents(events);
   })
   .catch(() => {
