@@ -2487,15 +2487,15 @@ tailwind.config = {
         "error":                    "#ffb4ab",
         "error-container":          "#93000a",
         "on-error-container":       "#ffdad6",
-        "surface":                  "#131313",
-        "surface-dim":              "#0e0e0e",
-        "surface-container-low":    "#1c1b1b",
-        "surface-container":        "#201f1f",
-        "surface-container-high":   "#2a2a2a",
-        "surface-container-highest":"#353534",
-        "on-surface":               "#e5e2e1",
-        "on-surface-variant":       "#c6c6cb",
-        "outline-variant":          "#45474b",
+        "surface":                  "var(--c-surface)",
+        "surface-dim":              "var(--c-surface-dim)",
+        "surface-container-low":    "var(--c-scl)",
+        "surface-container":        "var(--c-sc)",
+        "surface-container-high":   "var(--c-sch)",
+        "surface-container-highest":"var(--c-schh)",
+        "on-surface":               "var(--c-on)",
+        "on-surface-variant":       "var(--c-onv)",
+        "outline-variant":          "var(--c-ov)",
       },
       fontFamily: {
         headline: ["Space Grotesk","sans-serif"],
@@ -2513,8 +2513,24 @@ tailwind.config = {
 }
 </script>
 <style>
+/* ─── Theme variables ─── */
+:root {
+  --c-surface:#131313; --c-surface-dim:#0e0e0e;
+  --c-scl:#1c1b1b; --c-sc:#201f1f; --c-sch:#2a2a2a; --c-schh:#353534;
+  --c-on:#e5e2e1; --c-onv:#c6c6cb; --c-ov:#45474b;
+  --c-header:rgba(19,19,19,.85); --c-mobnav:rgba(19,19,19,.92);
+  --c-scroll:#353534;
+}
+body.light-mode {
+  --c-surface:#f2f2f2; --c-surface-dim:#e5e5e5;
+  --c-scl:#ffffff; --c-sc:#ebebeb; --c-sch:#e0e0e0; --c-schh:#d4d4d4;
+  --c-on:#1a1a1a; --c-onv:#555555; --c-ov:#b8b8b8;
+  --c-header:rgba(242,242,242,.92); --c-mobnav:rgba(242,242,242,.97);
+  --c-scroll:#b8b8b8;
+}
+
 .material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;font-family:'Material Symbols Outlined'}
-body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
+body{background:var(--c-surface);color:var(--c-on);font-family:'Inter',sans-serif}
 
 /* Category badge colours — dynamic JS classes */
 .bc-BSOD      {background:#1e0a4a;color:#c084fc}
@@ -2563,7 +2579,7 @@ body{background:#131313;color:#e5e2e1;font-family:'Inter',sans-serif}
 /* Scrollbar */
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:#353534;border-radius:2px}
+::-webkit-scrollbar-thumb{background:var(--c-scroll);border-radius:2px}
 
 /* Dotted bg texture */
 .dot-texture{
@@ -2598,6 +2614,74 @@ body.demo-mode #main-content { padding-top: 36px; }
   #mob-view { display: none !important; }
   #mob-bottom-nav { display: none !important; }
 }
+
+/* ─── Light mode overrides ─── */
+/* Key containers */
+body.light-mode #mob-view                    { background:var(--c-surface)   !important; }
+body.light-mode #mob-view > header           { background:var(--c-header)    !important; border-bottom-color:rgba(180,180,180,.2) !important; }
+body.light-mode #mob-bottom-nav              { background:var(--c-mobnav)    !important; border-top-color:rgba(180,180,180,.15) !important; }
+body.light-mode aside                        { border-right-color:rgba(180,180,180,.2) !important; }
+body.light-mode header[style*="rgba(19,19,19"] { background:var(--c-header) !important; border-bottom-color:rgba(180,180,180,.2) !important; }
+/* Dark backgrounds via inline style */
+body.light-mode [style*="background:#131313"]:not(body) { background:var(--c-surface)  !important; }
+body.light-mode [style*="background:#161616"]           { background:var(--c-scl)      !important; }
+body.light-mode [style*="background:#1c1b1b"]           { background:var(--c-scl)      !important; }
+body.light-mode [style*="background:#1e1e1e"]           { background:var(--c-sch)      !important; }
+body.light-mode [style*="background:#201f1f"]           { background:var(--c-sc)       !important; }
+body.light-mode [style*="background:#353534"]           { background:var(--c-sch)      !important; }
+body.light-mode [style*="background:#0f0f1a"]           { background:#eeeef6           !important; }
+body.light-mode [style*="background:rgba(19,19,19"]     { background:var(--c-header)   !important; }
+body.light-mode [style*="background:rgba(0,0,0,.25)"]   { background:rgba(0,0,0,.06)   !important; }
+body.light-mode [style*="background:rgba(0,0,0,.3)"]    { background:rgba(0,0,0,.07)   !important; }
+/* Muted text colors */
+body.light-mode [style*="color:rgba(198,198,203,.25)"]  { color:rgba(80,80,80,.35)  !important; }
+body.light-mode [style*="color:rgba(198,198,203,.3)"]   { color:rgba(80,80,80,.4)   !important; }
+body.light-mode [style*="color:rgba(198,198,203,.35)"]  { color:rgba(80,80,80,.45)  !important; }
+body.light-mode [style*="color:rgba(198,198,203,.4)"]   { color:rgba(80,80,80,.55)  !important; }
+body.light-mode [style*="color:rgba(198,198,203,.45)"]  { color:rgba(80,80,80,.6)   !important; }
+body.light-mode [style*="color:rgba(198,198,203,.5)"]   { color:rgba(80,80,80,.65)  !important; }
+body.light-mode [style*="color:rgba(198,198,203,.55)"]  { color:rgba(80,80,80,.7)   !important; }
+body.light-mode [style*="color:rgba(198,198,203,.6)"]   { color:rgba(80,80,80,.75)  !important; }
+body.light-mode [style*="color:#94a3b8"]                { color:#5a6a7a             !important; }
+body.light-mode [style*="color:#e5e2e1"]                { color:#1a1a1a             !important; }
+/* Borders */
+body.light-mode [style*="rgba(69,71,75"]                { border-color:rgba(160,160,160,.3) !important; }
+body.light-mode [style*="border:1.5px solid #2e2e2e"]   { border-color:rgba(160,160,160,.4) !important; }
+/* Input fields */
+body.light-mode input[type="text"]   { background:var(--c-sch)  !important; color:var(--c-on) !important; border-color:rgba(160,160,160,.4) !important; }
+body.light-mode input[type="password"] { background:var(--c-sch) !important; color:var(--c-on) !important; }
+/* Analysis row */
+body.light-mode .arow-box { background:#eeeef6 !important; color:#4a5568 !important; border-left-color:#6366f1 !important; }
+/* AI badge */
+body.light-mode .ai-badge { background:#e0e7ff !important; color:#3730a3 !important; }
+/* Modal */
+body.light-mode .modal { background:rgba(0,0,0,.45) !important; }
+/* SVG logo circle */
+body.light-mode svg circle[fill="#131313"] { fill:var(--c-surface); }
+/* Dot texture */
+body.light-mode .dot-texture { opacity:0.04 !important; }
+/* Background decorations — invisible in light mode */
+body.light-mode #mob-view [style*="background:rgba(0,228,117,.04)"],
+body.light-mode #mob-view [style*="background:rgba(255,180,171,.04)"] { opacity:0.3 !important; }
+/* Progress bar tracks */
+body.light-mode [style*="background:#353534"][class*="h-"] { background:#d8d8d8 !important; }
+/* Category badges — light variants */
+body.light-mode .bc-BSOD       { background:#f0e6ff !important; color:#7c3aed !important; }
+body.light-mode .bc-DISCO      { background:#dbeafe !important; color:#1d4ed8 !important; }
+body.light-mode .bc-SERVICIO   { background:#d1fae5 !important; color:#065f46 !important; }
+body.light-mode .bc-GPU        { background:#fef9c3 !important; color:#854d0e !important; }
+body.light-mode .bc-ANTIVIRUS  { background:#fae8ff !important; color:#a21caf !important; }
+body.light-mode .bc-APP_CRASH  { background:#fee2e2 !important; color:#991b1b !important; }
+body.light-mode .bc-KERNEL     { background:#ffedd5 !important; color:#9a3412 !important; }
+body.light-mode .bc-SISTEMA    { background:#e2e8f0 !important; color:#334155 !important; }
+body.light-mode .bc-RED        { background:#e0f2fe !important; color:#0369a1 !important; }
+body.light-mode .bc-DRIVER     { background:#fff7ed !important; color:#9a3412 !important; }
+body.light-mode .bc-ENERGIA    { background:#fefce8 !important; color:#854d0e !important; }
+body.light-mode .bc-ACTUALIZACION { background:#dcfce7 !important; color:#166534 !important; }
+body.light-mode .bc-SEGURIDAD  { background:#fee2e2 !important; color:#991b1b !important; }
+body.light-mode .bc-BROWSER    { background:#ccfbf1 !important; color:#115e59 !important; }
+body.light-mode .bc-System     { background:#e0e7ff !important; color:#3730a3 !important; }
+body.light-mode .bc-Application{ background:#d1fae5 !important; color:#065f46 !important; }
 </style>
 </head>
 <body class="min-h-screen flex overflow-hidden bg-surface text-on-surface">
@@ -2758,6 +2842,12 @@ body.demo-mode #main-content { padding-top: 36px; }
         class="text-[10px] font-headline font-bold tracking-widest uppercase py-2 px-4 rounded-full bg-surface-container-high text-on-surface transition-all"
         onmouseover="this.style.background='#00e475';this.style.color='#003918'"
         onmouseout="this.style.background='';this.style.color=''">Auto 30s</button>
+      <button onclick="toggleTheme()" title="Cambiar tema"
+        class="flex items-center justify-center w-8 h-8 rounded-full bg-surface-container-high text-on-surface transition-all"
+        onmouseover="this.style.background='#00e475';this.style.color='#003918'"
+        onmouseout="this.style.background='';this.style.color=''">
+        <span class="material-symbols-outlined theme-btn-icon" style="font-size:16px">light_mode</span>
+      </button>
     </div>
   </header>
 
@@ -3020,6 +3110,24 @@ body.demo-mode #main-content { padding-top: 36px; }
         <div class="flex-1 h-px" style="background:rgba(69,71,75,.15)"></div>
       </div>
 
+      <!-- Theme card -->
+      <div class="rounded-2xl p-5 mb-4 flex items-center justify-between" style="background:#161616;border:1px solid rgba(69,71,75,.25)">
+        <div class="flex items-center gap-3">
+          <span class="material-symbols-outlined text-primary text-xl">contrast</span>
+          <div>
+            <h3 class="font-headline font-semibold text-on-surface text-sm">Tema de color</h3>
+            <p class="text-xs" style="color:rgba(198,198,203,.45)" id="desk-theme-label">Modo oscuro activo</p>
+          </div>
+        </div>
+        <button onclick="toggleTheme()"
+          class="flex items-center gap-2 text-sm font-headline font-bold rounded-xl px-4 py-2.5 cursor-pointer transition-all"
+          style="background:rgba(0,228,117,.1);color:#00e475;border:1px solid rgba(0,228,117,.2)"
+          onmouseover="this.style.filter='brightness(1.15)'" onmouseout="this.style.filter=''">
+          <span class="material-symbols-outlined theme-btn-icon" style="font-size:18px">light_mode</span>
+          <span class="theme-label-btn">Cambiar a Light</span>
+        </button>
+      </div>
+
       <!-- Telegram card -->
       <div class="rounded-2xl p-6 mb-4" style="background:#161616;border:1px solid rgba(69,71,75,.25)">
         <div class="flex items-center gap-3 mb-1">
@@ -3101,6 +3209,10 @@ body.demo-mode #main-content { padding-top: 36px; }
       <button onclick="load()" style="background:none;border:none;cursor:pointer;
         color:rgba(198,198,203,.4);padding:6px;line-height:0">
         <span class="material-symbols-outlined" style="font-size:20px">refresh</span>
+      </button>
+      <button onclick="toggleTheme()" style="background:none;border:none;cursor:pointer;
+        color:rgba(198,198,203,.4);padding:6px;line-height:0" title="Cambiar tema">
+        <span class="material-symbols-outlined theme-btn-icon" style="font-size:20px">light_mode</span>
       </button>
     </div>
   </header>
@@ -3250,6 +3362,24 @@ body.demo-mode #main-content { padding-top: 36px; }
   <div id="mob-tab-settings" class="mob-panel" style="display:none;padding:80px 16px 112px;max-width:480px;margin:0 auto">
     <div class="space-y-4">
       <h2 class="text-xs uppercase tracking-[.2em] font-headline" style="color:rgba(198,198,203,.45)">Configuración</h2>
+
+      <!-- Theme toggle -->
+      <div class="rounded-xl p-5 flex items-center justify-between" style="background:#1c1b1b;border:1px solid rgba(69,71,75,.25)">
+        <div class="flex items-center gap-3">
+          <span class="material-symbols-outlined text-primary" style="font-size:20px;font-variation-settings:'FILL' 0">contrast</span>
+          <div>
+            <p class="text-sm font-headline font-semibold" style="color:var(--c-on)">Tema</p>
+            <p class="text-[10px] font-mono uppercase tracking-widest" style="color:rgba(198,198,203,.4)" id="mob-theme-label">Dark</p>
+          </div>
+        </div>
+        <button onclick="toggleTheme()"
+          class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-headline font-bold cursor-pointer transition-all"
+          style="background:rgba(0,228,117,.12);color:#00e475;border:1px solid rgba(0,228,117,.2)">
+          <span class="material-symbols-outlined theme-btn-icon" style="font-size:18px">light_mode</span>
+          <span class="theme-label-btn">Light</span>
+        </button>
+      </div>
+
       <div class="rounded-xl p-5 space-y-4" style="background:#1c1b1b;border:1px solid rgba(69,71,75,.25)">
         <div class="flex items-center gap-2">
           <span class="material-symbols-outlined text-primary" style="font-size:18px">send</span>
@@ -3336,6 +3466,31 @@ body.demo-mode #main-content { padding-top: 36px; }
 <script>
 const S = "__SECRET__", B = "__BASE__";
 const IS_DEMO = S === "vigil-demo";
+
+/* ── Theme toggle ── */
+function toggleTheme() {
+  const isLight = document.body.classList.toggle("light-mode");
+  localStorage.setItem("vigil-theme", isLight ? "light" : "dark");
+  _applyThemeUI(isLight);
+}
+function _applyThemeUI(isLight) {
+  const icon  = isLight ? "dark_mode" : "light_mode";
+  const label = isLight ? "Dark"      : "Light";
+  const btnLabel = isLight ? "Cambiar a Dark" : "Cambiar a Light";
+  document.querySelectorAll(".theme-btn-icon").forEach(el => el.textContent = icon);
+  document.querySelectorAll(".theme-label-btn").forEach(el => el.textContent = btnLabel);
+  const ml = document.getElementById("mob-theme-label");
+  if (ml) ml.textContent = isLight ? "Light" : "Dark";
+  const dl = document.getElementById("desk-theme-label");
+  if (dl) dl.textContent = isLight ? "Modo claro activo" : "Modo oscuro activo";
+}
+(function initTheme() {
+  const saved = localStorage.getItem("vigil-theme");
+  if (saved === "light") {
+    document.body.classList.add("light-mode");
+    _applyThemeUI(true);
+  }
+})();
 
 /* ── Mobile sidebar ── */
 function toggleSidebar() {
