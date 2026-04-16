@@ -143,6 +143,7 @@ def migrate_db():
         ("gpu_vram_total_mb","INTEGER"),("disk_read_mbps","REAL"),
         ("disk_write_mbps","REAL"),("smart_disks","TEXT"),
         ("browser_crashes","INTEGER"),("user_id","INTEGER"),
+        ("av_mode","TEXT"),("av_provider","TEXT"),
     ]:
         if col not in snap_cols:
             conn.execute(f"ALTER TABLE snapshots ADD COLUMN {col} {typ}")
@@ -162,6 +163,14 @@ def migrate_db():
         conn.execute("ALTER TABLE users ADD COLUMN telegram_token TEXT")
     if "telegram_chat_id" not in usr_cols:
         conn.execute("ALTER TABLE users ADD COLUMN telegram_chat_id TEXT")
+
+    # Limpiar análisis erróneos de servicios que se diagnosticaban mal por falta de contexto del sistema.
+    # Defender en Passive Mode generaba falsos positivos — se borra para que se re-analice con contexto correcto.
+    conn.execute("""
+        DELETE FROM service_analyses
+        WHERE service_name LIKE '%Defender%'
+          AND (analysis NOT LIKE '%Passive Mode%' OR analysis NOT LIKE '%passive%')
+    """)
 
     # Crear usuario marc0 si no existe (migra datos existentes)
     marc0 = conn.execute("SELECT id FROM users WHERE secret=?", (API_SECRET,)).fetchone()
@@ -412,6 +421,72 @@ def auto_incident(bsod_db_id: int):
     run_incident_analysis(inc_id, bsod, chain)
 
 
+def get_system_context(user_id: int = None, near_time: str = None) -> str:
+    """Devuelve contexto completo del sistema (AV, RAM, CPU, disco) para los prompts de análisis."""
+    try:
+        conn = get_db()
+        params: list = []
+        q = "SELECT * FROM snapshots WHERE 1=1"
+        if user_id:
+            q += " AND user_id=?"
+            params.append(user_id)
+        if near_time:
+            q += " AND received_at <= datetime(?, '+10 minutes')"
+            params.append(near_time)
+        q += " ORDER BY id DESC LIMIT 1"
+        row = conn.execute(q, params).fetchone()
+        conn.close()
+        if not row:
+            return ""
+        lines = []
+        av_mode = row["av_mode"] or ""
+        av_provider = row["av_provider"] or ""
+        if av_provider:
+            lines.append(f"AV registrado en Security Center: {av_provider}")
+        if av_mode:
+            lines.append(f"Windows Defender AMRunningMode: {av_mode}")
+            if "passive" in av_mode.lower():
+                lines.append("  → Defender en Passive Mode: NO es el AV principal. Otro AV está activo. Sus reinicios son COMPORTAMIENTO ESPERADO, no un problema.")
+        if row["mem_percent"] is not None:
+            lines.append(f"RAM: {row['mem_percent']}% usada ({row['mem_free_mb']} MB libres de {row['mem_total_mb']} MB)")
+        if row["cpu_percent"] is not None:
+            lines.append(f"CPU: {row['cpu_percent']}%")
+        if row["disk_read_mbps"] is not None:
+            lines.append(f"Disco I/O: lectura {row['disk_read_mbps']} MB/s, escritura {row['disk_write_mbps']} MB/s")
+        if row["smart_disks"]:
+            lines.append(f"S.M.A.R.T.: {row['smart_disks']}")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
+def is_known_normal_service_crash(service_name: str, crash_count: int, user_id: int = None) -> tuple:
+    """Detecta crashes de servicios que son comportamiento esperado. Retorna (es_normal, razón)."""
+    svc = service_name.lower()
+    # Obtener av_mode del último snapshot
+    av_mode = ""
+    try:
+        conn = get_db()
+        q = "SELECT av_mode FROM snapshots WHERE av_mode IS NOT NULL"
+        if user_id:
+            q += f" AND user_id={user_id}"
+        q += " ORDER BY id DESC LIMIT 1"
+        r = conn.execute(q).fetchone()
+        conn.close()
+        if r:
+            av_mode = r["av_mode"] or ""
+    except Exception:
+        pass
+
+    if ("defender" in svc or "windefend" in svc) and "passive" in av_mode.lower():
+        return True, "Windows Defender está en Passive Mode porque hay otro antivirus activo (ej: ESET). Sus reinicios son comportamiento normal del sistema — no requiere acción."
+    if "wmi performance adapter" in svc and crash_count <= 3:
+        return True, "WMI Performance Adapter se reinicia ocasionalmente durante recolección de métricas de rendimiento. Comportamiento normal en Windows 11."
+    if "state repository" in svc and crash_count <= 3:
+        return True, "State Repository Service (usado por apps UWP/Store) se reinicia ocasionalmente. Normal en Windows 11."
+    return False, ""
+
+
 def analyze_service_crash(service_name: str, category: str, crash_count: int, crash_events: list, detail_events: list):
     """Usa Claude para diagnosticar un crash loop de servicio y generar solución específica."""
     if not CLAUDE_API_KEY:
@@ -438,25 +513,30 @@ def analyze_service_crash(service_name: str, category: str, crash_count: int, cr
         for e in detail_events[:8]
     ) or "  (sin logs de detalle disponibles)"
 
-    prompt = f"""Eres un experto en diagnóstico de Windows. El servicio "{service_name}" (categoría: {category}) ha crasheado {crash_count} veces en las últimas horas en Windows 11.
+    sys_ctx = get_system_context()
+    sys_section = f"\nESTADO DEL SISTEMA:\n{sys_ctx}\n" if sys_ctx else ""
 
+    prompt = f"""Eres un experto en diagnóstico de Windows. El servicio "{service_name}" (categoría: {category}) ha crasheado {crash_count} veces en las últimas horas en Windows 11.
+{sys_section}
 EVENTOS DE CRASH (Service Control Manager):
 {crashes_text}
 
 LOGS DE DETALLE DEL SERVICIO (logs operacionales):
 {details_text}
 
+INSTRUCCIÓN IMPORTANTE: Evalúa primero si este comportamiento es normal dado el estado del sistema. Ejemplos de comportamiento normal: Defender en Passive Mode siempre se reinicia (esperado), ESET se reinicia durante actualizaciones (normal 1-3 veces), WMI Performance Adapter falla ocasionalmente (normal). Si el crash es comportamiento esperado, indícalo explícitamente con Urgencia: ignorar.
+
 Responde en español con este formato exacto:
-**Causa raíz:** (1-2 líneas — qué está causando el crash específicamente)
-**Diagnóstico:** (qué archivo, recurso, o condición lo desencadena)
-**Solución:** (comandos o pasos exactos y concretos para resolver — sé específico con rutas, comandos, etc.)
-**Urgencia:** (crítico / alto / medio / bajo)"""
+**Causa raíz:** (1-2 líneas — qué causa el crash, o "Comportamiento esperado" si es normal)
+**Diagnóstico:** (detalle del contexto o explicación de por qué es normal)
+**Solución:** (pasos concretos para resolver, o "Sin acción requerida" si es comportamiento normal)
+**Urgencia:** (crítico / alto / medio / bajo / ignorar)"""
 
     client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
     try:
         resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=500,
+            model="claude-sonnet-4-6",
+            max_tokens=600,
             messages=[{"role": "user", "content": prompt}]
         )
         analysis_text = resp.content[0].text
@@ -472,7 +552,7 @@ Responde en español con este formato exacto:
         severity = "high"
         if urg_match:
             u = urg_match.group(1).lower()
-            severity = "critical" if "crít" in u else "medium" if "medio" in u else "low" if "bajo" in u else "high"
+            severity = "critical" if "crít" in u else "low" if ("bajo" in u or "ignor" in u) else "medium" if "medio" in u else "high"
 
         conn2 = get_db()
         conn2.execute("""
@@ -512,11 +592,14 @@ def auto_analyze(event_id_db: int):
             for r in related
         )
 
+    sys_ctx = get_system_context(event.get("user_id"), event.get("time_created"))
+    sys_section = f"\n\nESTADO DEL SISTEMA:\n{sys_ctx}" if sys_ctx else ""
+
     client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
     try:
         resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=500,
+            model="claude-sonnet-4-6",
+            max_tokens=600,
             messages=[{"role": "user", "content": f"""Eres un experto en diagnóstico de Windows. Analiza este evento del sistema Windows 11.
 
 Evento principal:
@@ -527,12 +610,14 @@ Evento principal:
 - Nivel: {event['level_name']}
 - Categoría: {event['category']}
 - Mensaje: {event['message'][:800]}
-{context}
+{context}{sys_section}
+
+INSTRUCCIÓN: Si el evento es comportamiento normal o esperado dado el estado del sistema (ej: Defender en Passive Mode, servicios reiniciándose por actualización, etc.), indícalo claramente y recomienda "Sin acción requerida".
 
 Responde en español, conciso (máx 200 palabras):
 **Qué es:** (1 línea)
-**Causa probable:** (1-2 líneas, considera los eventos previos si los hay)
-**Acción recomendada:** (1-2 líneas concretas, o "Monitorear" si no es urgente)"""}]
+**Causa probable:** (1-2 líneas — si es normal, explica por qué)
+**Acción recomendada:** (pasos concretos, "Monitorear" si no es urgente, o "Sin acción requerida" si es normal)"""}]
         )
         analysis = resp.content[0].text
         conn2 = get_db()
@@ -571,6 +656,8 @@ class Metrics(BaseModel):
     smart_disks: Optional[str] = None
     browser_crashes: Optional[int] = None
     disks: Optional[str] = None
+    av_mode: Optional[str] = None
+    av_provider: Optional[str] = None
 
 class EventBatch(BaseModel):
     secret: str
@@ -728,13 +815,13 @@ def receive_events(batch: EventBatch, bg: BackgroundTasks):
             INSERT INTO snapshots (received_at,hostname,username,mem_total_mb,mem_free_mb,
                 mem_percent,cpu_percent,uptime_minutes,gpu_name,gpu_temp,gpu_percent,gpu_vram_used_mb,
                 gpu_vram_total_mb,cpu_temp,disk_read_mbps,disk_write_mbps,smart_disks,
-                browser_crashes,disks,user_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                browser_crashes,disks,user_id,av_mode,av_provider)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (now, m.hostname, m.username, m.mem_total_mb, m.mem_free_mb,
               m.mem_percent, m.cpu_percent, m.uptime_minutes, getattr(m,'gpu_name',None),
               m.gpu_temp, m.gpu_percent, m.gpu_vram_used_mb, m.gpu_vram_total_mb,
               m.cpu_temp, m.disk_read_mbps, m.disk_write_mbps, m.smart_disks,
-              m.browser_crashes, m.disks, uid))
+              m.browser_crashes, m.disks, uid, m.av_mode, m.av_provider))
 
     for e in batch.events:
         cat = categorize(e.event_id, e.provider, e.message)
@@ -1050,8 +1137,8 @@ def get_issues(secret: str = Query(...)):
         "wsearch":               ("Reconstruir índice: detener WSearch, borrar C:\\ProgramData\\Microsoft\\Search\\Data\\Applications\\Windows, reiniciar WSearch", "high"),
         "windows update":        ("Ejecutar: sfc /scannow y DISM /RestoreHealth. Revisar C:\\Windows\\Logs\\WindowsUpdate", "high"),
         "wuauserv":              ("Ejecutar: sfc /scannow y DISM /RestoreHealth. Revisar C:\\Windows\\Logs\\WindowsUpdate", "high"),
-        "windows defender":      ("MpCmdRun.exe -RemoveDefinitions -All && -SignatureUpdate", "medium"),
-        "windefend":             ("MpCmdRun.exe -RemoveDefinitions -All && -SignatureUpdate", "medium"),
+        "windows defender":      ("Verificar si Defender está en Passive Mode (otro AV activo). Si no, ejecutar: MpCmdRun.exe -RemoveDefinitions -All && -SignatureUpdate", "low"),
+        "windefend":             ("Verificar si Defender está en Passive Mode (otro AV activo). Si no, ejecutar: MpCmdRun.exe -RemoveDefinitions -All && -SignatureUpdate", "low"),
         "nvidia":                ("Reinstalar driver NVIDIA limpio con DDU en Safe Mode", "high"),
         "wmi":                   ("winmgmt /resetrepository en cmd admin", "high"),
         "winmgmt":               ("winmgmt /resetrepository en cmd admin", "high"),
@@ -1086,10 +1173,17 @@ def get_issues(secret: str = Query(...)):
             continue
         seen_services.add(svc_key)
 
+        # Filtrar comportamiento conocido-normal antes de cualquier análisis o notificación
+        is_normal, normal_reason = is_known_normal_service_crash(svc_name, row["cnt"], uid)
+        if is_normal:
+            continue
+
         # Buscar análisis previo de Claude para este servicio
+        # Solo usar análisis recientes (últimas 24h) para evitar usar datos obsoletos/incorrectos
         claude_analysis = conn.execute("""
             SELECT action, analysis, severity FROM service_analyses
-            WHERE service_name=? ORDER BY id DESC LIMIT 1
+            WHERE service_name=? AND created_at > datetime('now','-24 hours')
+            ORDER BY id DESC LIMIT 1
         """, (svc_name,)).fetchone()
 
         if claude_analysis and claude_analysis["action"]:

@@ -215,6 +215,20 @@ try {
     }
 } catch {}
 
+# Estado del antivirus activo
+$avMode     = $null
+$avProvider = $null
+try {
+    $mpStatus = Get-MpComputerStatus -ErrorAction SilentlyContinue
+    if ($mpStatus) { $avMode = $mpStatus.AMRunningMode }
+} catch {}
+try {
+    $avProducts = Get-CimInstance -Namespace "root\SecurityCenter2" -ClassName AntiVirusProduct -ErrorAction SilentlyContinue
+    if ($avProducts) {
+        $avProvider = ($avProducts | ForEach-Object { $_.displayName }) -join ", "
+    }
+} catch {}
+
 $metrics = [PSCustomObject]@{
     hostname          = $env:COMPUTERNAME
     username          = $env:USERNAME
@@ -234,6 +248,8 @@ $metrics = [PSCustomObject]@{
     smart_disks       = ($smartList -join "; ")
     browser_crashes   = $browserCrashes
     disks             = ($diskList -join "; ")
+    av_mode           = $avMode
+    av_provider       = $avProvider
 }
 
 @{ events = $results; metrics = $metrics } | ConvertTo-Json -Compress -Depth 5
