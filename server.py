@@ -4180,17 +4180,19 @@ function renderFlat(events) {
 function renderGrouped(events) {
   const tbody = document.getElementById("tbody");
   tbody.innerHTML = "";
-  // Build groups preserving order of first appearance
+  // Group by date (day) + category so each row = one category on one specific day
   const order = [], groups = {};
   events.forEach(e => {
+    const day = (e.time_created || "").substring(0, 10); // "2026-04-17"
     const cat = e.category || "SISTEMA";
-    if (!groups[cat]) { groups[cat] = []; order.push(cat); }
-    groups[cat].push(e);
+    const key = day + "::" + cat;
+    if (!groups[key]) { groups[key] = { day, cat, evts: [] }; order.push(key); }
+    groups[key].evts.push(e);
   });
 
-  order.forEach(cat => {
-    const evts  = groups[cat];
-    const isOpen = openGroups.has(cat);
+  order.forEach(key => {
+    const { day, cat, evts } = groups[key];
+    const isOpen = openGroups.has(key);
     const crit  = evts.filter(e=>e.level===1).length;
     const errs  = evts.filter(e=>e.level===2).length;
     const warns = evts.filter(e=>e.level===3).length;
@@ -4198,17 +4200,19 @@ function renderGrouped(events) {
     if (crit)  badges += `<span class="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold" style="background:rgba(147,0,10,.25);color:#ffb4ab">${crit} crít.</span>`;
     if (errs)  badges += `<span class="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold" style="background:rgba(45,18,0,.5);color:#fb923c">${errs} err.</span>`;
     if (warns) badges += `<span class="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold" style="background:rgba(250,189,0,.1);color:#fabd00">${warns} warn.</span>`;
+    // Format day as MM/DD for display
+    const dayLabel = day.length >= 10 ? day.substring(5).replace("-","/") : day;
 
     // Group header row
     const gtr = document.createElement("tr");
-    gtr.id = "grp-"+cat;
+    gtr.id = "grp-"+key;
     gtr.style.cssText = "border-bottom:1px solid rgba(69,71,75,.15);cursor:pointer;transition:background .15s";
     gtr.style.background = isOpen ? "rgba(0,228,117,.04)" : "";
     gtr.addEventListener("mouseover",()=>gtr.style.background="rgba(0,228,117,.06)");
-    gtr.addEventListener("mouseout", ()=>gtr.style.background=openGroups.has(cat)?"rgba(0,228,117,.04)":"");
-    gtr.addEventListener("click",()=>toggleGroup(cat));
+    gtr.addEventListener("mouseout", ()=>gtr.style.background=openGroups.has(key)?"rgba(0,228,117,.04)":"");
+    gtr.addEventListener("click",()=>toggleGroup(key));
     gtr.innerHTML = `
-      <td class="px-6 py-4 font-mono text-xs whitespace-nowrap" style="color:rgba(198,198,203,.35)">${fmt(evts[0].time_created)}</td>
+      <td class="px-6 py-4 font-mono text-xs whitespace-nowrap" style="color:rgba(198,198,203,.35)">${dayLabel}</td>
       <td class="px-4 py-4" colspan="2">
         <span class="bc-${cat} px-2.5 py-1 rounded text-[10px] font-bold font-headline">${cat}</span>
         ${badges}
@@ -4218,7 +4222,7 @@ function renderGrouped(events) {
         ${esc((evts[0].message||"").substring(0,60))}${(evts[0].message||"").length>60?"…":""}
       </td>
       <td class="px-6 py-4 text-right">
-        <span class="material-symbols-outlined" id="grp-icon-${cat}"
+        <span class="material-symbols-outlined" id="grp-icon-${key}"
           style="font-size:18px;color:rgba(198,198,203,.35);vertical-align:middle;transition:transform .2s;transform:rotate(${isOpen?'180':'0'}deg)">expand_more</span>
       </td>`;
     tbody.appendChild(gtr);
@@ -4227,7 +4231,7 @@ function renderGrouped(events) {
     evts.forEach(e => {
       const tr = _evtRow(e, true);
       tr.classList.add("grp-child");
-      tr.dataset.grp = cat;
+      tr.dataset.grp = key;
       if (!isOpen) tr.style.display = "none";
       tr.style.background = "rgba(10,10,10,.25)";
       tbody.appendChild(tr);
@@ -4236,16 +4240,16 @@ function renderGrouped(events) {
   });
 }
 
-function toggleGroup(cat) {
-  const isOpen = openGroups.has(cat);
-  if (isOpen) openGroups.delete(cat); else openGroups.add(cat);
+function toggleGroup(key) {
+  const isOpen = openGroups.has(key);
+  if (isOpen) openGroups.delete(key); else openGroups.add(key);
   const nowOpen = !isOpen;
   document.querySelectorAll(".grp-child").forEach(tr => {
-    if (tr.dataset.grp === cat) tr.style.display = nowOpen ? "" : "none";
+    if (tr.dataset.grp === key) tr.style.display = nowOpen ? "" : "none";
   });
-  const icon = document.getElementById("grp-icon-"+cat);
+  const icon = document.getElementById("grp-icon-"+key);
   if (icon) icon.style.transform = `rotate(${nowOpen?180:0}deg)`;
-  const gtr = document.getElementById("grp-"+cat);
+  const gtr = document.getElementById("grp-"+key);
   if (gtr) gtr.style.background = nowOpen ? "rgba(0,228,117,.04)" : "";
 }
 
