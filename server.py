@@ -1,4 +1,4 @@
-import os, sqlite3, threading, time, secrets, string
+import os, sqlite3, threading, time, secrets, string, re, html, math
 import urllib.request, urllib.parse
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -215,6 +215,11 @@ def check_rate_limit(key: str, max_req: int = 5, window_s: int = 3600):
     if len(bucket) >= max_req:
         raise HTTPException(429, f"Demasiadas solicitudes. Intenta en {window_s//60} minutos.")
     _rate_buckets[key].append(now)
+    # Evitar crecimiento ilimitado: purgar claves con buckets vacíos periódicamente
+    if len(_rate_buckets) > 500:
+        empty = [k for k, v in _rate_buckets.items() if not v]
+        for k in empty:
+            del _rate_buckets[k]
 
 def recategorize_db():
     """Re-categoriza eventos existentes con la lógica nueva."""
@@ -255,7 +260,7 @@ def categorize(event_id: int, provider: str, message: str = "") -> str:
     if event_id in GPU_IDS:
         return "GPU"
 
-    # 4. RED — conectividad y protocolos de red
+    # 5. RED — conectividad y protocolos de red
     if event_id in NET_IDS or any(k in p for k in _NET_PROV):
         return "RED"
 
@@ -468,10 +473,12 @@ def is_known_normal_service_crash(service_name: str, crash_count: int, user_id: 
     try:
         conn = get_db()
         q = "SELECT av_mode FROM snapshots WHERE av_mode IS NOT NULL"
+        params: list = []
         if user_id:
-            q += f" AND user_id={user_id}"
+            q += " AND user_id=?"
+            params.append(user_id)
         q += " ORDER BY id DESC LIMIT 1"
-        r = conn.execute(q).fetchone()
+        r = conn.execute(q, params).fetchone()
         conn.close()
         if r:
             av_mode = r["av_mode"] or ""
@@ -543,12 +550,11 @@ Responde en español con este formato exacto:
 
         # Extraer la solución del análisis para mostrarla en el issue
         action = service_name + ": ver análisis"
-        import re as _re2
-        sol_match = _re2.search(r'\*\*Solución:\*\*\s*(.+?)(?:\*\*|$)', analysis_text, _re2.DOTALL)
+        sol_match = re.search(r'\*\*Solución:\*\*\s*(.+?)(?:\*\*|$)', analysis_text, re.DOTALL)
         if sol_match:
             action = sol_match.group(1).strip()[:300]
 
-        urg_match = _re2.search(r'\*\*Urgencia:\*\*\s*(\w+)', analysis_text, _re2.IGNORECASE)
+        urg_match = re.search(r'\*\*Urgencia:\*\*\s*(\w+)', analysis_text, re.IGNORECASE)
         severity = "high"
         if urg_match:
             u = urg_match.group(1).lower()
@@ -676,6 +682,12 @@ def send_telegram(text: str, token: str, chat_id: str, key: str = "", cooldown: 
         if now - _tg_sent.get(cache_key, 0) < cooldown:
             return
         _tg_sent[cache_key] = now
+        # Evitar crecimiento ilimitado: eliminar entradas expiradas cada 1000 inserciones
+        if len(_tg_sent) > 1000:
+            cutoff = now - 3600
+            expired = [k for k, v in _tg_sent.items() if v < cutoff]
+            for k in expired:
+                del _tg_sent[k]
     try:
         url  = f"https://api.telegram.org/bot{token}/sendMessage"
         data = urllib.parse.urlencode({
@@ -697,9 +709,9 @@ def notify_event(event: dict, category: str, user: dict, hostname: str = ""):
     eid   = event.get("event_id", 0)
     level = event.get("level", 9)
     prov  = event.get("provider", "")
-    msg   = (event.get("message", "") or "")[:200]
+    msg   = html.escape((event.get("message", "") or "")[:200])
     t     = (event.get("time_created", "") or "")[:16].replace("T", " ")
-    host  = hostname or user.get("name", "PC")
+    host  = html.escape(hostname or user.get("name", "PC"))
 
     # BSOD — prioridad máxima, cooldown 10 min
     if eid in BSOD_IDS:
@@ -889,20 +901,21 @@ def snapshots_history(secret: str = Query(...), hostname: str = Query(default=""
     user = get_user(secret)
     uid  = user["id"]
     conn = get_db()
-    hf = " AND hostname=?" if hostname else ""
-    hp = [hostname] if hostname else []
+    where  = ["user_id=?", f"received_at > datetime('now','-{int(hours)} hours')"]
+    params = [uid]
+    if hostname:
+        where.append("hostname=?")
+        params.append(hostname)
     rows = conn.execute(
-        f"""SELECT received_at, cpu_percent, mem_percent, gpu_percent, gpu_temp, cpu_temp
-            FROM snapshots
-            WHERE user_id=? AND received_at > datetime('now','-{int(hours)} hours'){hf}
-            ORDER BY id ASC""",
-        [uid]+hp
+        f"SELECT received_at, cpu_percent, mem_percent, gpu_percent, gpu_temp, cpu_temp "
+        f"FROM snapshots WHERE {' AND '.join(where)} ORDER BY id ASC",
+        params
     ).fetchall()
     conn.close()
     # Samplear a max 120 puntos para no saturar el cliente
     data = [dict(r) for r in rows]
     if len(data) > 120:
-        step = len(data) // 120
+        step = math.ceil(len(data) / 120)
         data = data[::step]
     return {"history": data}
 
@@ -1150,7 +1163,6 @@ def get_issues(secret: str = Query(...)):
         "dns":                   ("ipconfig /flushdns. Revisar configuración de red", "medium"),
     }
 
-    import re as _re
     loops = conn.execute("""
         SELECT event_id, message, COUNT(*) as cnt,
                MAX(time_created) as last_seen, MIN(id) as first_id
@@ -1165,8 +1177,12 @@ def get_issues(secret: str = Query(...)):
     seen_services = set()
     for row in loops:
         msg = row["message"] or ""
-        m = _re.search(r"The (.+?) service (terminated|crashed|stopped)", msg, _re.IGNORECASE)
-        svc_name = m.group(1).strip() if m else "Servicio desconocido"
+        m = re.search(
+            r"(?:The (.+?) service (terminated|crashed|stopped)"
+            r"|El servicio (.+?) (terminó|falló|se detuvo|ha terminado))",
+            msg, re.IGNORECASE
+        )
+        svc_name = (m.group(1) or m.group(3) or "").strip() if m else "Servicio desconocido"
         svc_cat  = categorize(row["event_id"], "Service Control Manager", msg)
         svc_key  = svc_name.lower()
         if svc_key in seen_services:
@@ -1257,10 +1273,10 @@ def get_issues(secret: str = Query(...)):
     """, (uid,)).fetchall()
     for row in app_loops:
         msg = row["message"] or ""
-        m = _re.search(r"Faulting application name: ([^,\r\n]+)", msg)
+        m = re.search(r"Faulting application name: ([^,\r\n]+)", msg)
         app_name = m.group(1).strip() if m else "Aplicación desconocida"
-        exc_m = _re.search(r"Exception code: (0x[0-9a-fA-F]+)", msg)
-        mod_m = _re.search(r"Faulting module name: ([^,\r\n]+)", msg)
+        exc_m = re.search(r"Exception code: (0x[0-9a-fA-F]+)", msg)
+        mod_m = re.search(r"Faulting module name: ([^,\r\n]+)", msg)
         detail = f"Módulo: {mod_m.group(1).strip() if mod_m else '?'} | Excepción: {exc_m.group(1) if exc_m else '?'}"
         issues.append({
             "severity":    "high",
@@ -1397,31 +1413,34 @@ def get_issues(secret: str = Query(...)):
 @app.get("/api/patterns")
 def get_patterns(secret: str = Query(...)):
     """Top proveedores/eventos con más errores recientes."""
-    auth(secret)
+    user = get_user(secret)
+    uid  = user["id"]
     conn = get_db()
     rows = conn.execute("""
         SELECT provider, event_id, category, COUNT(*) as cnt,
                MAX(time_created) as last_seen
         FROM events
-        WHERE time_created > datetime('now', '-24 hours')
+        WHERE user_id=? AND time_created > datetime('now', '-24 hours')
         GROUP BY provider, event_id
         HAVING COUNT(*) >= 2
         ORDER BY cnt DESC
         LIMIT 15
-    """).fetchall()
+    """, (uid,)).fetchall()
     conn.close()
     return {"patterns": [dict(r) for r in rows]}
 
 @app.get("/api/incidents")
 def get_incidents(secret: str = Query(...)):
-    auth(secret)
+    user = get_user(secret)
+    uid  = user["id"]
     conn = get_db()
     incidents = conn.execute("""
         SELECT i.*, e.time_created, e.event_id, e.message, e.provider
         FROM incidents i
         JOIN events e ON e.id = i.bsod_event_id
+        WHERE e.user_id=?
         ORDER BY i.id DESC LIMIT 20
-    """).fetchall()
+    """, (uid,)).fetchall()
 
     result = []
     for inc in incidents:
@@ -1431,8 +1450,8 @@ def get_incidents(secret: str = Query(...)):
             ids = inc["chain_ids"].split(",")
             placeholders = ",".join("?" * len(ids))
             chain = conn.execute(
-                f"SELECT id, time_created, category, provider, event_id, level_name, message FROM events WHERE id IN ({placeholders}) ORDER BY time_created ASC",
-                ids
+                f"SELECT id, time_created, category, provider, event_id, level_name, message FROM events WHERE id IN ({placeholders}) AND user_id=? ORDER BY time_created ASC",
+                ids + [uid]
             ).fetchall()
             chain = [dict(e) for e in chain]
         inc["chain"] = chain
@@ -1502,10 +1521,11 @@ def analyze_event(event_id: int, secret: str = Query(...)):
 
 @app.delete("/api/events")
 def clear_events(secret: str = Query(...)):
-    auth(secret)
+    user = get_user(secret)
+    uid  = user["id"]
     conn = get_db()
-    conn.execute("DELETE FROM events")
-    conn.execute("DELETE FROM snapshots")
+    conn.execute("DELETE FROM events    WHERE user_id=?", (uid,))
+    conn.execute("DELETE FROM snapshots WHERE user_id=?", (uid,))
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -1513,7 +1533,7 @@ def clear_events(secret: str = Query(...)):
 @app.post("/api/recategorize")
 def recategorize(secret: str = Query(...)):
     """Re-categoriza todos los eventos existentes con la lógica actual."""
-    auth(secret)
+    require_admin(secret)
     updated = recategorize_db()
     return {"updated": updated}
 
@@ -1579,8 +1599,8 @@ def admin_delete_user(user_id: int, secret: str = Query(...)):
     if not user:
         conn.close()
         raise HTTPException(404, "Usuario no encontrado")
-    # No permitir borrar al admin (marc0)
-    if user["name"] == "marc0":
+    # No permitir borrar al admin (user_id = 1)
+    if user["id"] == 1:
         conn.close()
         raise HTTPException(400, "No se puede eliminar al usuario admin")
     conn.execute("DELETE FROM events    WHERE user_id=?", (user_id,))
@@ -2008,8 +2028,8 @@ document.getElementById("inp-name").focus();
 </html>
 """
 
-CLIENT_VERSION = "1.2.4"
-CLIENT_DOWNLOAD_URL = "https://github.com/marcosstgo/vigil/releases/download/v1.2.4/Vigil.exe"
+CLIENT_VERSION = "1.2.5"
+CLIENT_DOWNLOAD_URL = "https://github.com/marcosstgo/vigil/releases/download/v1.2.5/Vigil.exe"
 
 @app.get("/api/version")
 def get_version():

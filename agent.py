@@ -11,15 +11,33 @@ Windows Event Log Monitor Agent v3
 """
 import subprocess
 import json
+import os
 import time
 import requests
 from datetime import datetime
 from pathlib import Path
 
-SERVER_URL    = "https://marcossantiago.com/win-monitor/api/events"
-API_SECRET    = "winmon-marc0-2026"
 POLL_INTERVAL = 60
 STATE_FILE    = Path(__file__).parent / "agent_state.json"
+
+def _load_config() -> dict:
+    """Lee config.json desde %APPDATA%/Vigil/config.json (instalación normal)
+    o desde el mismo directorio del script (modo standalone/desarrollo)."""
+    candidates = [
+        Path(os.environ.get("APPDATA", "")) / "Vigil" / "config.json",
+        Path(__file__).parent / "config.json",
+    ]
+    for p in candidates:
+        if p.exists():
+            try:
+                return json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+    return {}
+
+_cfg       = _load_config()
+SERVER_URL = _cfg.get("server_url", "https://marcossantiago.com/win-monitor/api/events")
+API_SECRET = _cfg.get("secret", "")
 
 PS_SCRIPT = r"""
 $results = @()
@@ -325,16 +343,15 @@ def run():
                 state[log] = max(state.get(log, 0), rid)
             result = send(new_events, metrics)
             save_state(state)
-            if True:
-                gpu_info = ""
-                if metrics.get("gpu_percent") is not None:
-                    gpu_info = f" | GPU {metrics.get('gpu_percent')}% {metrics.get('gpu_temp','?')}°C"
-                bc = metrics.get("browser_crashes", 0) or 0
-                bc_info = f" | Crashes {bc}" if bc > 0 else ""
-                print(f"[{datetime.now():%H:%M:%S}] +{result.get('received',0)} eventos | "
-                      f"RAM {metrics.get('mem_percent','?')}% | "
-                      f"CPU {metrics.get('cpu_percent','?')}%{gpu_info}{bc_info} | "
-                      f"Uptime {metrics.get('uptime_minutes','?')}m")
+            gpu_info = ""
+            if metrics.get("gpu_percent") is not None:
+                gpu_info = f" | GPU {metrics.get('gpu_percent')}% {metrics.get('gpu_temp','?')}°C"
+            bc = metrics.get("browser_crashes", 0) or 0
+            bc_info = f" | Crashes {bc}" if bc > 0 else ""
+            print(f"[{datetime.now():%H:%M:%S}] +{result.get('received',0)} eventos | "
+                  f"RAM {metrics.get('mem_percent','?')}% | "
+                  f"CPU {metrics.get('cpu_percent','?')}%{gpu_info}{bc_info} | "
+                  f"Uptime {metrics.get('uptime_minutes','?')}m")
 
         except requests.exceptions.RequestException as e:
             print(f"[{datetime.now():%H:%M:%S}] Red: {e}")

@@ -74,7 +74,7 @@ def acquire_single_instance() -> bool:
     return True
 
 # ── Constantes ────────────────────────────────────────────────────────────────
-VERSION      = "1.2.4"
+VERSION      = "1.2.5"
 APP_NAME     = "Vigil"
 CONFIG_DIR   = Path(os.environ["APPDATA"]) / "Vigil"
 CONFIG_FILE  = CONFIG_DIR / "config.json"
@@ -446,7 +446,8 @@ def main():
         return
 
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    set_autorun(True)  # Auto-registrar en startup al primer arranque
+    if not get_autorun():
+        set_autorun(True)
 
     cfg = load_config()
 
